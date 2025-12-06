@@ -11,7 +11,7 @@ sys.path.append(root_dir)
 
 from utils import update_setting_value, load_all_finance_data
 
-# --- 通用編輯器邏輯 (保持不變) ---
+# --- 通用編輯器邏輯 (核心優化) ---
 def handle_data_editor(df, sheet, key_prefix, df_session_key):
     if df.empty:
         st.info("目前沒有資料。")
@@ -101,7 +101,6 @@ def show_income_tab(sheet_income, df_income):
     st.subheader("💰 收入金庫")
     
     with st.expander("➕ 新增收入", expanded=False):
-        # 這裡的表單邏輯簡單，不需要動態互動，所以可以保留 st.form
         with st.form("add_income"):
             i_date = st.date_input("日期", datetime.now())
             i_item = st.text_input("項目", placeholder="ex: 薪資")
@@ -126,8 +125,6 @@ def show_income_tab(sheet_income, df_income):
 def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
     st.subheader("📝 支出櫃台")
     
-    # [關鍵修改] 這裡拿掉了 st.form，改成直接寫在 expander 裡
-    # 這樣下拉選單改變時，Streamlit 才能即時重新整理畫面，顯示輸入框
     with st.expander("💸 新增支出", expanded=True): 
         
         f_date = st.date_input("日期", datetime.now())
@@ -139,7 +136,6 @@ def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
         t2_opts = type2_list + [ADD_NEW]
         
         c1, c2 = st.columns(2)
-        # 因為沒有 st.form，這裡選單一變，網頁就會 rerun，下面的 if 判斷就會生效
         sel_t1 = c1.selectbox("主分類", t1_opts)
         new_t1 = None
         if sel_t1 == ADD_NEW:
@@ -150,11 +146,8 @@ def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
         if sel_t2 == ADD_NEW:
             new_t2 = c2.text_input("輸入新子分類名稱", placeholder="ex: 電影")
         
-        # 按鈕改成普通的 st.button
         if st.button("💸 記帳"):
             if sheet_fin:
-                # 決定最終使用的分類名稱
-                # 防呆：如果選了新增但沒打字，就不讓過，或者設為未分類
                 final_t1 = sel_t1
                 if sel_t1 == ADD_NEW:
                     if new_t1: final_t1 = new_t1
@@ -172,25 +165,32 @@ def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
                 wk = f_date.isocalendar()[1]
                 row_data = [str(f_date), wk, f_item, f_price, final_t1, final_t2]
                 
-                # 1. 寫入雲端
                 sheet_fin.append_row(row_data)
                 
-                # 2. 本地更新
                 new_row = pd.DataFrame([row_data], columns=['Date', 'Week', 'Item', 'Price', 'Type1', 'Type2'])
                 if 'df_fin' in st.session_state:
                     st.session_state['df_fin'] = pd.concat([st.session_state['df_fin'], new_row], ignore_index=True)
 
-                # 3. 更新 Setting (如果有的話)
                 settings_updated = False
-                if sel_t1 == ADD_NEW and new_t1 not in type1_list:
+                if sel_t1 == ADD_NEW and new_t1 and new_t1 not in type1_list:
                     update_setting_value("Type1_Options", ",".join(type1_list + [new_t1]))
                     settings_updated = True
                     
-                if sel_t2 == ADD_NEW and new_t2 not in type2_list:
+                if sel_t2 == ADD_NEW and new_t2 and new_t2 not in type2_list:
                     update_setting_value("Type2_Options", ",".join(type2_list + [new_t2]))
                     settings_updated = True
                 
                 if settings_updated:
                     st.toast("已自動將新類別加入設定！")
                     
-                st.success("已記錄！
+                st.success("已記錄！")
+                
+                load_all_finance_data.clear()
+                if "fin_data_loaded" in st.session_state:
+                    del st.session_state["fin_data_loaded"]
+                    
+                st.rerun()
+            else: st.error("找不到 Finance 分頁")
+
+    st.markdown("### 📝 管理最近支出")
+    handle_data_editor(df_fin, sheet_fin, "expense", "df_fin")
