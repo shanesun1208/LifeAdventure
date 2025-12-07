@@ -57,7 +57,7 @@ def get_worksheet(worksheet_name):
         try:
             return sh.worksheet(worksheet_name)
         except gspread.WorksheetNotFound:
-            st.error(f"❌ 找不到分頁：'{worksheet_name}'")
+            # 靜默失敗，交由上層處理
             return None
         except Exception as e:
             print(f"Error fetching {worksheet_name}: {e}")
@@ -74,7 +74,7 @@ def load_sheet_data(worksheet_name):
 
 @st.cache_data(ttl=60)
 def load_all_finance_data():
-    sheet_names = ["Finance", "FixedExpenses", "Income", "Budget", "ReserveFund"]
+    sheet_names = ["Finance", "FixedExpenses", "Income", "Budget", "ReserveFund", "QuestBoard"] # 多抓 QuestBoard
     data = {}
     
     def fetch_one(name):
@@ -83,7 +83,7 @@ def load_all_finance_data():
             return name, pd.DataFrame(sheet.get_all_records())
         return name, pd.DataFrame()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         results = executor.map(fetch_one, sheet_names)
     
     for name, df in results:
@@ -106,7 +106,6 @@ def get_settings():
             'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
             'Income_Types': "薪資,獎金,投資,兼職,其他",
             'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
-            # [新增] 任務類型
             'Quest_Types': "工作,採購,禪行,其他",
             'Payment_Methods': "現金,信用卡",
             'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
@@ -134,25 +133,12 @@ def update_setting_value(key, val):
 def get_weather(city):
     if not WEATHER_API_KEY: return "📍 API未設定"
     try:
-        # [安全寫法]
         base_url = "https://api.openweathermap.org/data/2.5/weather"
         query = f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
         url = base_url + query
-        
         res = requests.get(url).json()
-        return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C"
+        return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C | {res['weather'][0]['description']}"
     except: return f"📍 {city}"
-
-@st.cache_data(ttl=3600)
-def get_ai_greeting(hour, weather):
-    if not GEMINI_API_KEY: return "歡迎回到冒險者公會！"
-    period = "晚上"
-    if 5<=hour<11: period="早晨"
-    elif 11<=hour<14: period="中午"
-    elif 14<=hour<18: period="下午"
-    prompt = f"""現在是{period}({hour}點)，天氣{weather}。請以RPG櫃台小姐語氣給予20字內溫暖問候。"""
-    try: return model.generate_content(prompt).text.strip()
-    except: return "今天也要加油喔！"
 
 def ask_gemini(text, status):
     if not GEMINI_API_KEY: return "AI 休息中"
@@ -161,11 +147,10 @@ def ask_gemini(text, status):
         return model.generate_content(prompt).text.strip()
     except: return "紀錄已保存。"
 
-# [修正] 參數改名 rank -> q_type 以符合新邏輯
-def generate_reward(task_name, content, q_type):
+def generate_reward(task_name, content, rank):
     if not GEMINI_API_KEY: return "公會積分 +10"
     try:
-        prompt = f"玩家建立任務：{task_name} (內容:{content}, 類型:{q_type})。請想一個有趣的「小獎勵」(15字內)。"
+        prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
 
@@ -173,14 +158,11 @@ def get_loading_message(current_weather_info=""):
     settings = get_settings()
     saved_msgs = settings.get('Loading_Messages', "")
     last_update = settings.get('Loading_Update_Date', "2000-01-01")
-    
     need_update = False
     try:
         last_date = datetime.strptime(last_update, "%Y-%m-%d")
-        if (datetime.now() - last_date).days >= 7:
-            need_update = True
-    except:
-        need_update = True
+        if (datetime.now() - last_date).days >= 7: need_update = True
+    except: need_update = True
     
     if need_update and GEMINI_API_KEY:
         try:
@@ -196,10 +178,40 @@ def get_loading_message(current_weather_info=""):
                 update_setting_value("Loading_Messages", new_msgs_str)
                 update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
                 saved_msgs = new_msgs_str
-        except Exception as e:
-            print(f"AI error: {e}")
+        except Exception as e: print(f"AI error: {e}")
 
     if saved_msgs:
         msg_list = [m.strip() for m in saved_msgs.split("|||") if m.strip()]
         if msg_list: return random.choice(msg_list)
     return "正在前往商會..."
+
+# --- [新功能] 貼心女僕日報 ---
+@st.cache_data(ttl=3600) # 1小時更新一次，避免太煩
+def get_maid_briefing(hour, weather, free_cash, urgent_task_count, active_task_count):
+    if not GEMINI_API_KEY: return "主人，歡迎回來！系統一切正常。"
+    
+    period = "深夜"
+    if 5<=hour<11: period="早晨"
+    elif 11<=hour<14: period="中午"
+    elif 14<=hour<18: period="下午"
+    elif 18<=hour<22: period="晚上"
+
+    # 建構提示詞
+    prompt = f"""
+    請扮演一位「貼心、溫柔、稍微有點調皮」的女僕/管家。
+    現在時間是{period} ({hour}點)，天氣{weather}。
+    
+    主人的現狀：
+    1. 本月剩餘可支配金額：${free_cash} (若<0請溫柔提醒省錢，若>10000可鼓勵適度犒賞)
+    2. 緊急/待辦任務：{urgent_task_count} 個 (若>3請提醒專注，若0請稱讚)
+    3. 進行中任務：{active_task_count} 個
+    
+    請綜合以上資訊，跟主人說一段話 (50字以內)。
+    語氣要生活化、有溫度，不要像機器人報告數據。
+    如果有需要提醒的地方(如沒錢、任務太多、天氣壞)請委婉提出建議。
+    """
+    
+    try:
+        return model.generate_content(prompt).text.strip()
+    except:
+        return "主人，歡迎回來！今天也要加油喔！"
