@@ -28,6 +28,12 @@ st.markdown("""
     .metric-value { font-size: 24px; font-weight: bold; color: #00CC99; }
     .metric-label { font-size: 14px; color: #AAA; }
     .budget-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
+    
+    /* [優化] 讓直向選單更好看一點 */
+    section[data-testid="stSidebar"] .stRadio > label {
+        font-weight: bold;
+        color: #00CC99;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -40,7 +46,6 @@ TYPE1 = SETTINGS.get('Type1_Options', '').split(',')
 TYPE2 = SETTINGS.get('Type2_Options', '').split(',')
 INCOME_TYPES = SETTINGS.get('Income_Types', '').split(',')
 FIXED_TYPES = SETTINGS.get('Fixed_Types', '').split(',')
-# [新增] 讀取付款方式
 PAY_METHODS = SETTINGS.get('Payment_Methods', '').split(',')
 
 TYPE1_STR = SETTINGS.get('Type1_Options', '')
@@ -52,14 +57,14 @@ with st.sidebar:
     if "fin_nav" not in st.session_state:
         st.session_state["fin_nav"] = "📊 總覽"
 
+    # [關鍵修改] 移除了 horizontal=True，變回直向清單
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
-        label_visibility="collapsed",
-        horizontal=True 
+        label_visibility="collapsed"
     )
     st.divider()
-    st.caption("Life Adventure OS v2.4")
+    st.caption("Life Adventure OS v2.5")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
@@ -68,7 +73,6 @@ if page == "我的小屋":
 elif page == "冒險日誌":
     diary.show_diary_page()
 
-# 修改點：多傳了 PAY_METHODS
 elif page == "商會":
     finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES, PAY_METHODS)
 
