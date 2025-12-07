@@ -104,10 +104,12 @@ def get_settings():
             'Location': "Taipei,TW",
             'Type1_Options': "飲食,交通,娛樂,固定開銷,其他",
             'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
-            'Income_Types': "薪資,獎金",
-            'Fixed_Types': "訂閱,房租,保險", # 預設值
-            'Payment_Methods': "現金,信用卡", # 新增預設值
-            'Loading_Messages': "前往商會路上...|整理帳本中...",
+            'Income_Types': "薪資,獎金,投資,兼職,其他",
+            'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
+            # [新增] 任務類型
+            'Quest_Types': "工作,採購,禪行,其他",
+            'Payment_Methods': "現金,信用卡",
+            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
             'Loading_Update_Date': "2000-01-01"
         }
         for k, v in defaults.items():
@@ -132,9 +134,11 @@ def update_setting_value(key, val):
 def get_weather(city):
     if not WEATHER_API_KEY: return "📍 API未設定"
     try:
+        # [安全寫法]
         base_url = "https://api.openweathermap.org/data/2.5/weather"
         query = f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
         url = base_url + query
+        
         res = requests.get(url).json()
         return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C"
     except: return f"📍 {city}"
@@ -157,10 +161,11 @@ def ask_gemini(text, status):
         return model.generate_content(prompt).text.strip()
     except: return "紀錄已保存。"
 
-def generate_reward(task_name, content, rank):
+# [修正] 參數改名 rank -> q_type 以符合新邏輯
+def generate_reward(task_name, content, q_type):
     if not GEMINI_API_KEY: return "公會積分 +10"
     try:
-        prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
+        prompt = f"玩家建立任務：{task_name} (內容:{content}, 類型:{q_type})。請想一個有趣的「小獎勵」(15字內)。"
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
 
