@@ -13,133 +13,184 @@ from utils import get_worksheet, load_sheet_data
 
 def show_diary_page():
     st.title("📖 冒險篇章 (Adventure Log)")
-    st.caption("記載著那些偉大的旅程，以及通往異世界的入口...")
-
-    # --- CSS 美化 ---
+    
+    # --- CSS 美化: 方塊傳送門風格 ---
     st.markdown("""
     <style>
-    .adventure-title {
-        font-size: 22px;
+    /* 1. 已解鎖的傳送門 (魔法方塊) */
+    .portal-card {
+        display: block;
+        width: 100%;
+        height: 220px; /* 固定高度，讓它像正方形 */
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); /* 深邃星空藍 */
+        border: 2px solid #FFD700; /* 金框 */
+        border-radius: 15px;
+        padding: 20px;
+        text-decoration: none; /* 去除超連結底線 */
+        transition: transform 0.3s, box-shadow 0.3s;
+        position: relative;
+        overflow: hidden;
+        color: white !important;
+    }
+    .portal-card:hover {
+        transform: translateY(-5px); /* 浮起效果 */
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.6); /* 金色發光 */
+        border-color: #fff;
+    }
+    .portal-title {
+        font-size: 20px;
         font-weight: bold;
         color: #FFD700;
-        margin-bottom: 5px;
+        margin-bottom: 10px;
+        border-bottom: 1px dashed rgba(255,255,255,0.3);
+        padding-bottom: 5px;
     }
-    .adventure-desc {
+    .portal-desc {
+        font-size: 13px;
         color: #ddd;
-        font-size: 14px;
-        margin-bottom: 15px;
-        font-style: italic;
+        line-height: 1.4;
+        height: 80px; /* 限制高度 */
+        overflow: hidden;
+    }
+    .portal-icon {
+        position: absolute;
+        bottom: 10px;
+        right: 15px;
+        font-size: 40px;
+        opacity: 0.2;
+    }
+
+    /* 2. 未解鎖的石板 (封印方塊) */
+    .locked-card {
+        height: 220px;
+        background-color: #2b2b2b; /* 深灰石頭 */
+        border: 2px dashed #666;
+        border-radius: 15px;
+        padding: 15px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .locked-title {
+        color: #aaa;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    
+    /* 調整 Streamlit 內部 spacing */
+    div[data-testid="column"] {
+        padding: 5px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- 1. 決定要用哪個分頁 (關鍵修正) ---
-    # 先找 Adventures，找不到才找 Sheet1
+    # --- 資料庫連線 ---
     target_sheet_name = "Adventures"
     sheet_adv = get_worksheet("Adventures")
     
     if not sheet_adv:
-        # 如果真的找不到 Adventures，再試試看 Sheet1
+        # 相容舊版
         sheet_check = get_worksheet("Sheet1")
         if sheet_check:
             target_sheet_name = "Sheet1"
             sheet_adv = sheet_check
         else:
-            # 兩個都找不到，就報錯並停止
-            st.error("❌ 找不到資料表！請去 Google Sheet 新增一個分頁，命名為 'Adventures'。")
+            st.error("❌ 找不到 'Adventures' 分頁，請先去 Google Sheet 建立。")
             st.stop()
 
-    # --- 2. 啟動新冒險 (新增區) ---
+    # --- 1. 啟動新冒險 (置頂區塊) ---
     with st.expander("✨ 撰寫新篇章 (Start New Adventure)", expanded=False):
         with st.form("new_adventure"):
             c1, c2 = st.columns([2, 1])
             a_name = c1.text_input("冒險名稱", placeholder="例如: 發表頂級期刊論文")
             a_status = c2.selectbox("目前狀態", ["進行中", "已完成", "暫停"])
-            a_desc = st.text_area("序章 (冒險簡介/初衷)", placeholder="為什麼要開始這場冒險？")
+            a_desc = st.text_area("序章 (冒險簡介/初衷)", placeholder="簡短描述這場冒險的目標...")
             a_date = st.date_input("啟程日", datetime.now())
             
-            st.info("💡 Notion 傳送門連結可以在建立後，於下方卡片中填入。")
+            st.caption("💡 建立後，下方會出現一個「封印方塊」，輸入 Notion 連結即可解鎖。")
             
             if st.form_submit_button("🚀 展開冒險"):
-                # 欄位: Name, Description, Status, StartDate, NotionLink
-                sheet_adv.append_row([a_name, a_desc, a_status, str(a_date), ""])
-                st.success(f"篇章「{a_name}」已建立！")
-                load_sheet_data.clear() # 清快取
-                st.rerun()
+                if sheet_adv:
+                    # 欄位: Name, Description, Status, StartDate, NotionLink
+                    sheet_adv.append_row([a_name, a_desc, a_status, str(a_date), ""])
+                    st.success(f"篇章「{a_name}」已建立！")
+                    load_sheet_data.clear()
+                    st.rerun()
 
     st.divider()
 
-    # --- 3. 讀取並顯示 ---
+    # --- 2. 冒險方塊顯示區 ---
     try:
-        # 只讀取剛剛確認存在的那一個分頁
         df_adv = load_sheet_data(target_sheet_name)
 
-        if not df_adv.empty:
-            # 確保欄位存在
-            if "Name" in df_adv.columns:
+        if not df_adv.empty and "Name" in df_adv.columns:
+            
+            # 建立 3 欄網格
+            cols = st.columns(3)
+            
+            # 倒序顯示 (最新的在最前面)
+            for i, (index, row) in enumerate(df_adv.sort_index(ascending=False).iterrows()):
+                col = cols[i % 3] # 循環放入 column 0, 1, 2
                 
-                # 倒序顯示，新的在上面
-                for i, (index, row) in enumerate(df_adv.sort_index(ascending=False).iterrows()):
-                    
-                    notion_link = str(row.get('NotionLink', '')).strip()
-                    has_link = len(notion_link) > 5 
-                    
-                    # 卡片容器
-                    with st.container():
-                        c_info, c_portal = st.columns([3, 2])
+                notion_link = str(row.get('NotionLink', '')).strip()
+                has_link = len(notion_link) > 5 
+                
+                with col:
+                    if has_link:
+                        # === 狀態 A: 傳送門已開啟 (整張卡片可點) ===
+                        # 使用 HTML <a> 標籤包覆 div，達成全卡片點擊
+                        card_html = f"""
+                        <a href="{notion_link}" target="_blank" class="portal-card">
+                            <div class="portal-title">🛡️ {row['Name']}</div>
+                            <div class="portal-desc">{row.get('Description', '無描述...')}</div>
+                            <div style="font-size:12px; margin-top:20px; opacity:0.7;">
+                                📅 {row['StartDate']}<br>
+                                🚩 {row['Status']}
+                            </div>
+                            <div class="portal-icon">🌀</div>
+                        </a>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
                         
-                        with c_info:
-                            st.markdown(f"""
-                            <div class="adventure-title">🛡️ {row['Name']}</div>
-                            <div class="adventure-desc">{row.get('Description', '')}</div>
-                            <div style="font-size:12px; color:#aaa;">📅 啟程: {row['StartDate']} | 🚩 狀態: {row['Status']}</div>
-                            """, unsafe_allow_html=True)
+                        # 維護功能 (放在卡片下方)
+                        with st.expander("⚙️", expanded=False):
+                            new_link = st.text_input("修正連結", value=notion_link, key=f"lk_{index}")
+                            if st.button("更新", key=f"up_{index}"):
+                                sheet_adv.update_cell(index + 2, 5, new_link)
+                                st.success("已更新")
+                                load_sheet_data.clear()
+                                st.rerun()
+                            if st.button("刪除", key=f"del_{index}"):
+                                sheet_adv.delete_rows(index + 2)
+                                st.success("已刪除")
+                                load_sheet_data.clear()
+                                st.rerun()
 
-                        with c_portal:
-                            st.write("") # Spacer
+                    else:
+                        # === 狀態 B: 封印石板 (需要輸入鑰匙) ===
+                        # 使用 Streamlit 容器模擬卡片外觀
+                        with st.container(border=True):
+                            st.markdown(f"**🔒 {row['Name']}**")
+                            st.caption(f"{row.get('Description', '')[:30]}...")
                             
-                            if has_link:
-                                # === 門是開的 ===
-                                st.success("🌀 傳送門已開啟")
-                                st.link_button("🔮 進入 Notion 冒險世界", notion_link, use_container_width=True)
-                                
-                                # 修改區
-                                with st.expander("⚙️ 設定"):
-                                    new_link_edit = st.text_input("修正連結", value=notion_link, key=f"edit_link_{index}")
-                                    if st.button("更新", key=f"btn_upd_{index}"):
-                                        # 更新資料庫 (Row = index + 2)
-                                        sheet_adv.update_cell(index + 2, 5, new_link_edit)
-                                        st.toast("連結已更新！")
-                                        load_sheet_data.clear()
-                                        st.rerun()
-                                    
-                                    if st.button("🗑️ 刪除篇章", key=f"del_adv_{index}"):
-                                        sheet_adv.delete_rows(index + 2)
-                                        st.success("篇章已刪除")
-                                        load_sheet_data.clear()
-                                        st.rerun()
-
-                            else:
-                                # === 門是關的 ===
-                                st.warning("🚪 傳送門緊閉中...")
-                                input_link = st.text_input("🔑 插入鑰匙 (輸入 Notion 連結)", key=f"input_{index}", placeholder="https://notion.so/...")
-                                
-                                if st.button("✨ 啟動傳送門", key=f"activate_{index}"):
-                                    if input_link:
-                                        sheet_adv.update_cell(index + 2, 5, input_link)
-                                        st.balloons()
-                                        st.success("能量注入！傳送門開啟中...")
-                                        load_sheet_data.clear()
-                                        st.rerun()
-                                    else:
-                                        st.error("請輸入有效的連結！")
+                            key_input = st.text_input("插入鑰匙 (Notion URL)", key=f"in_{index}", label_visibility="collapsed", placeholder="https://notion.so/...")
+                            
+                            if st.button("✨ 解鎖", key=f"btn_{index}", use_container_width=True):
+                                if key_input:
+                                    sheet_adv.update_cell(index + 2, 5, key_input)
+                                    st.balloons()
+                                    load_sheet_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("請輸入網址")
                         
-                        st.markdown("---") # 分隔線
+                        # 為了讓高度對齊，加一點空白
+                        st.write("") 
 
-            else:
-                st.error(f"資料表欄位錯誤：請確認 {target_sheet_name} 的標題列包含 Name, Description, Status, StartDate, NotionLink")
         else:
-            st.info("目前還沒有任何冒險篇章，快去寫下第一章吧！")
+            st.info("目前還沒有冒險篇章，快去上方建立一個吧！")
             
     except Exception as e:
         st.error(f"讀取錯誤: {e}")
