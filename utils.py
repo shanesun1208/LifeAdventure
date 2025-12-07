@@ -27,7 +27,7 @@ WEATHER_API_KEY, GEMINI_API_KEY = init_api()
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # --- Google Sheet 連線 ---
 @st.cache_resource
