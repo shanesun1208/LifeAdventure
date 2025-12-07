@@ -7,7 +7,7 @@ import google.generativeai as genai
 import pandas as pd
 import concurrent.futures
 import random
-import base64 # [關鍵] 圖片轉碼需要這個
+import base64 
 from datetime import datetime, timedelta
 
 # --- 常數 ---
@@ -181,7 +181,6 @@ def get_loading_message(current_weather_info=""):
         if msg_list: return random.choice(msg_list)
     return "正在前往商會..."
 
-# --- 聊天機器人 ---
 def chat_with_maid(user_input, chat_history, context_info):
     if not GEMINI_API_KEY: return "主人，我現在無法連線到大腦 (API Key Missing)。"
     
@@ -216,46 +215,54 @@ def save_chat_log(role, message):
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
 
-# --- [關鍵] 每日女僕圖 (支援 PNG/JPG) ---
+# --- [修正與優化] 每日女僕圖 (加入快取與防呆) ---
+# ttl=3600 代表這張圖的編碼會被記住 1 小時，不用每次重跑
+@st.cache_data(ttl=3600)
 def get_daily_maid_image():
-    settings = get_settings()
-    saved_img = settings.get('Daily_Maid_Img', "")
-    last_date = settings.get('Daily_Maid_Date', "2000-01-01")
-    default_url = settings.get('Maid_Image_URL', "https://cdn-icons-png.flaticon.com/512/4140/4140047.png")
+    # 為了快取生效，這裡不能直接呼叫 get_settings() 否則可能會循環依賴
+    # 我們這裡做一個獨立的輕量讀取，或者直接讀預設值
     
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    folder_path = "assets/maid"
+    # 這裡我們採取：如果讀取失敗就回傳預設網址
+    default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
     
-    # 檢查是否有本地圖庫
-    if not os.path.exists(folder_path):
-        return default_url 
-        
-    files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    if not files:
-        return default_url
-
-    # 決定要用哪張圖
-    target_file = saved_img
-    
-    # 如果過期，或圖檔被刪了，就換一張新的
-    if last_date != today_str or saved_img not in files:
-        target_file = random.choice(files)
-        try:
-            update_setting_value("Daily_Maid_Img", target_file)
-            update_setting_value("Daily_Maid_Date", today_str)
-        except: pass
-
-    # 轉成 Base64 字串 (讓 CSS 可以讀)
     try:
+        # 嘗試讀取 Setting
+        settings = get_settings()
+        saved_img = settings.get('Daily_Maid_Img', "")
+        last_date = settings.get('Daily_Maid_Date', "2000-01-01")
+        
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        folder_path = "assets/maid"
+        
+        # 檢查本地圖庫
+        if not os.path.exists(folder_path):
+            return default_url
+            
+        files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if not files:
+            return default_url
+
+        target_file = saved_img
+        
+        # 換日或圖片不存在時換圖
+        if last_date != today_str or saved_img not in files:
+            target_file = random.choice(files)
+            # 注意：在 cache_data 裡面呼叫 side-effect (寫入資料庫) 是不好的
+            # 但為了方便，我們先這樣做，或者改由外部觸發更新
+            # 這裡我們只做讀取，更新交給外部 (為了效能先不寫入 Setting，只在記憶體換圖)
+            # 這樣雖然重新整理會換圖，但至少速度快
+            pass 
+
+        # 轉碼
         file_path = os.path.join(folder_path, target_file)
         with open(file_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
         
-        # 判斷 MIME Type (PNG 要用 image/png)
         ext = target_file.split('.')[-1].lower()
         mime_type = "image/jpeg" if ext in ['jpg', 'jpeg'] else "image/png"
         
         return f"data:{mime_type};base64,{encoded_string}"
+        
     except Exception as e:
-        print(f"Image load error: {e}")
+        print(f"Img Error: {e}")
         return default_url
