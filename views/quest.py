@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import sys
 import os
 
+# 路徑修正
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
@@ -11,20 +12,26 @@ sys.path.append(parent_dir)
 from utils import get_worksheet, generate_reward, update_setting_value, load_sheet_data
 
 def show_quest_board(quest_types):
-    # 引入手寫字體
+    # 引入手寫字體 & 紋理 CSS
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Long+Cang&display=swap');
+    
+    /* 牛皮紙紋理 (如果網路圖掛了會顯示底色) */
+    .kraft-texture {
+        background-image: url("https://www.transparenttextures.com/patterns/cardboard.png");
+    }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="corkboard-title">🛡️ 任務看板 (Quest Board)</div>', unsafe_allow_html=True)
     sheet_qb = get_worksheet("QuestBoard")
     
-    # --- 發布區 ---
+    # --- 發布區 (動態新增類型) ---
     with st.expander("➕ 張貼新委託 (Post Quest)", expanded=False):
         q_name = st.text_input("任務名稱")
         
+        # 動態類型選單
         ADD_NEW = "➕ 新增類型..."
         q_opts = quest_types + [ADD_NEW]
         sel_type = st.selectbox("任務類型 (決定紙張顏色)", q_opts)
@@ -68,9 +75,10 @@ def show_quest_board(quest_types):
                 todo_tasks = df_qb[df_qb['Status'] == '待接取']
                 
                 if not todo_tasks.empty:
-                    cols = st.columns(3)
+                    # [修改點] 改成 4 欄，讓紙條變窄
+                    cols = st.columns(4)
                     for i, (index, row) in enumerate(todo_tasks.iterrows()):
-                        col = cols[i % 3]
+                        col = cols[i % 4] # [修改點] 配合欄數取餘數
                         with col:
                             # --- 視覺邏輯 ---
                             q_type = row.get('Type', '其他')
@@ -89,51 +97,23 @@ def show_quest_board(quest_types):
                                 bg_color = "#C8E6C9" # 淡綠
                                 text_color = "#1B5E20"
                             
+                            # 旋轉
                             rot = (i % 5 - 2) * 1.5
                             
-                            # [關鍵修正] 將 CSS 壓縮成單行字串，移除註解，確保 HTML 不會壞掉
-                            card_css = (
-                                f"background-color: {bg_color}; color: {text_color}; "
-                                "padding: 20px; margin: 10px 0; border-radius: 2px; "
-                                "box-shadow: 4px 4px 10px rgba(0,0,0,0.2); position: relative; "
-                                "border-top: 1px solid rgba(255,255,255,0.4); min-height: 260px; "
-                                f"transform: rotate({rot}deg); "
-                                "background-image: url('https://www.transparenttextures.com/patterns/cardboard.png');"
-                            )
+                            # CSS 變數
+                            card_css = f"background-color: {bg_color}; color: {text_color}; padding: 20px; margin: 10px 0; border-radius: 2px; box-shadow: 4px 4px 10px rgba(0,0,0,0.2); position: relative; border-top: 1px solid rgba(255,255,255,0.4); min-height: 260px; transform: rotate({rot}deg); background-image: url('https://www.transparenttextures.com/patterns/cardboard.png');"
                             
-                            pin_css = (
-                                "position: absolute; top: -15px; left: 50%; "
-                                "transform: translateX(-50%); font-size: 30px; "
-                                "text-shadow: 2px 2px 2px rgba(0,0,0,0.3);"
-                            )
+                            pin_css = "position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 30px; text-shadow: 2px 2px 2px rgba(0,0,0,0.3);"
                             
-                            title_css = (
-                                "font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; "
-                                f"border-bottom: 2px dashed {text_color}; padding-bottom: 8px; "
-                                "margin-bottom: 12px; text-align: center;"
-                            )
+                            title_css = f"font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 8px; margin-bottom: 12px; text-align: center;"
                             
-                            content_css = (
-                                "font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; "
-                                "margin-bottom: 20px;"
-                            )
+                            content_css = "font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; margin-bottom: 20px;"
                             
-                            meta_css = (
-                                "font-size: 13px; opacity: 0.8; margin-top: auto; "
-                                "font-family: sans-serif; line-height: 1.6;"
-                            )
+                            meta_css = "font-size: 13px; opacity: 0.8; margin-top: auto; font-family: sans-serif; line-height: 1.6;"
                             
-                            stamp_css = (
-                                "position: absolute; bottom: 15px; right: 15px; "
-                                "width: 60px; height: 60px; "
-                                f"border: 3px double {text_color}; border-radius: 50%; "
-                                "display: flex; align-items: center; justify-content: center; "
-                                "font-family: 'Long Cang', cursive; font-size: 20px; font-weight: bold; "
-                                "transform: rotate(-15deg); opacity: 0.7; "
-                                "mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png');"
-                            )
+                            stamp_css = f"position: absolute; bottom: 15px; right: 15px; width: 60px; height: 60px; border: 3px double {text_color}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Long Cang', cursive; font-size: 20px; font-weight: bold; transform: rotate(-15deg); opacity: 0.7; mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png');"
 
-                            # 構建 HTML (乾淨版)
+                            # 組合 HTML
                             html_code = f"""
                             <div style="{card_css}">
                                 <div style="{pin_css}">📌</div>
@@ -143,22 +123,24 @@ def show_quest_board(quest_types):
                                     📅 期限: {row['Deadline']}<br>
                                     🎁 獎勵: {row['Reward']}
                                 </div>
-                                <div style="{stamp_css}">{q_type}</div>
+                                <div style="{stamp_css}">
+                                    {q_type}
+                                </div>
                             </div>
                             """
                             
                             st.markdown(html_code, unsafe_allow_html=True)
                             
-                            # 按鈕
-                            c1, c2 = st.columns(2)
-                            with c1:
+                            # 按鈕區
+                            c_take, c_cancel = st.columns(2)
+                            with c_take:
                                 if st.button(f"🖐️ 接取", key=f"take_{index}"):
                                     sheet_qb.update_cell(index + 2, 4, "進行中")
                                     st.balloons()
                                     st.success(f"已接取：{row['Name']}")
                                     load_sheet_data.clear()
                                     st.rerun()
-                            with c2:
+                            with c_cancel:
                                 if st.button(f"❌ 撤下", key=f"del_{index}"):
                                     sheet_qb.delete_rows(index + 2)
                                     st.toast("委託已撕毀。")
@@ -187,11 +169,12 @@ def show_tracking():
                                 badge_color = "#eee"
                                 if q_type == "工作": badge_color = "#fff9c4"
                                 elif q_type == "禪行": badge_color = "#e1bee7"
+                                elif q_type == "採購": badge_color = "#c8e6c9"
                                 
                                 st.markdown(f"""
                                 <div style="display:flex; align-items:center; gap:10px;">
                                     <h3 style="margin:0;">{row['Name']}</h3>
-                                    <span style='background:{badge_color}; padding:4px 8px; font-size:14px; border-radius:12px; border:1px solid #ccc;'>{q_type}</span>
+                                    <span style='background:{badge_color}; padding:4px 8px; font-size:14px; border-radius:12px; border:1px solid #999;'>{q_type}</span>
                                 </div>
                                 """, unsafe_allow_html=True)
                                 st.write(f"**內容**: {row['Content']}")
