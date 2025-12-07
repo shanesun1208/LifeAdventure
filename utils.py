@@ -215,46 +215,44 @@ def save_chat_log(role, message):
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
 
-# --- [修正與優化] 每日女僕圖 (加入快取與防呆) ---
-# ttl=3600 代表這張圖的編碼會被記住 1 小時，不用每次重跑
+# --- [關鍵] 每日女僕圖 (路徑強化版) ---
 @st.cache_data(ttl=3600)
 def get_daily_maid_image():
-    # 為了快取生效，這裡不能直接呼叫 get_settings() 否則可能會循環依賴
-    # 我們這裡做一個獨立的輕量讀取，或者直接讀預設值
-    
-    # 這裡我們採取：如果讀取失敗就回傳預設網址
+    # 預設圖 (網路上的圖，保證能顯示)
     default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
     
     try:
-        # 嘗試讀取 Setting
         settings = get_settings()
         saved_img = settings.get('Daily_Maid_Img', "")
         last_date = settings.get('Daily_Maid_Date', "2000-01-01")
         
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        folder_path = "assets/maid"
+        # [修改點] 使用絕對路徑，確保一定找得到資料夾
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        folder_path = os.path.join(current_dir, "assets", "maid")
         
-        # 檢查本地圖庫
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # 1. 檢查資料夾是否存在
         if not os.path.exists(folder_path):
-            return default_url
+            print(f"Warning: Folder not found: {folder_path}")
+            return default_url 
             
+        # 2. 抓取所有圖片檔案
         files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if not files:
+            print("Warning: No images in folder")
             return default_url
 
         target_file = saved_img
         
-        # 換日或圖片不存在時換圖
+        # 3. 換圖邏輯
         if last_date != today_str or saved_img not in files:
             target_file = random.choice(files)
-            # 注意：在 cache_data 裡面呼叫 side-effect (寫入資料庫) 是不好的
-            # 但為了方便，我們先這樣做，或者改由外部觸發更新
-            # 這裡我們只做讀取，更新交給外部 (為了效能先不寫入 Setting，只在記憶體換圖)
-            # 這樣雖然重新整理會換圖，但至少速度快
-            pass 
-
-        # 轉碼
+            # 這裡我們只更新記憶體裡的目標，不強制寫入 Setting (避免快取問題)，反正明天會重算
+            
+        # 4. 讀取並轉碼
         file_path = os.path.join(folder_path, target_file)
+        
         with open(file_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
         
@@ -264,5 +262,5 @@ def get_daily_maid_image():
         return f"data:{mime_type};base64,{encoded_string}"
         
     except Exception as e:
-        print(f"Img Error: {e}")
+        print(f"Image load error: {e}")
         return default_url
