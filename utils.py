@@ -8,6 +8,7 @@ import pandas as pd
 import concurrent.futures
 import random
 import base64
+import time
 from datetime import datetime, timedelta
 
 # --- 常數 ---
@@ -25,28 +26,19 @@ def init_api():
 
 WEATHER_API_KEY, GEMINI_API_KEY = init_api()
 
-# --- [關鍵修改] 指定正確的模型名稱 ---
+# --- [關鍵修改] API 設定 (改用高額度模型) ---
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # 您提供的清單顯示有 gemini-2.0-flash，我們就用這個！
-    # 這比舊的 gemini-pro 更快更聰明
+    # 根據您提供的清單，'gemini-flash-latest' 通常對應到 1.5 Flash
+    # 這是目前免費額度最慷慨的模型 (15 RPM)
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        print("✅ 已成功設定模型: gemini-2.0-flash")
+        model_name = 'gemini-flash-latest'
+        model = genai.GenerativeModel(model_name)
+        print(f"✅ 已設定模型: {model_name} (高額度版)")
     except Exception as e:
         print(f"❌ 模型設定失敗: {e}")
-        # 如果還是失敗，嘗試最後一招：自動抓取列表中的第一個可用模型
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            if available_models:
-                target = available_models[0].replace("models/", "")
-                model = genai.GenerativeModel(target)
-                print(f"🔄 自動切換至模型: {target}")
-            else:
-                model = None
-        except:
-            model = None
+        model = None
 
 # --- Google Sheet 連線 ---
 @st.cache_resource
@@ -165,6 +157,7 @@ def get_weather(city):
 def generate_reward(task_name, content, rank):
     if not GEMINI_API_KEY: return "公會積分 +10"
     try:
+        # 這裡也加個防護，避免生成獎勵時卡住
         prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
@@ -204,7 +197,7 @@ def chat_with_maid(user_input, chat_history, context_info):
     if not GEMINI_API_KEY: return "主人，我現在無法連線到大腦 (API Key Missing)。"
     
     if 'model' not in globals() or model is None:
-        return "主人，我的語言模組目前無法使用，請檢查終端機的錯誤訊息。"
+        return "主人，我的語言模組發生故障，請檢查設定。"
 
     history_text = ""
     for msg in chat_history[-5:]:
@@ -225,11 +218,19 @@ def chat_with_maid(user_input, chat_history, context_info):
     
     請以女僕的口吻回應 (50字以內)，如果主人的問題跟財務或任務有關，請參考【你的情報】給予建議。
     """
+    
+    # [關鍵修改] 增加 429 錯誤的防護機制
     try:
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        return f"我有點頭暈... ({e})"
+        error_msg = str(e)
+        if "429" in error_msg:
+            return "主人，我講話太快了，有點喘不過氣... (請休息 30 秒後再跟我說話)"
+        elif "404" in error_msg:
+            return f"主人，找不到語言模型 (404)。請聯絡開發者。"
+        else:
+            return f"我有點頭暈... ({e})"
 
 def save_chat_log(role, message):
     sheet = get_worksheet("ChatHistory")
