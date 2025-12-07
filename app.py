@@ -5,23 +5,35 @@ from views import home, finance, quest, diary, setting
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="Life Adventure OS", page_icon="🛡️", layout="wide")
 
-# --- 2. CSS 樣式 (介面靈魂) ---
+# --- 2. CSS 樣式 (UI 靈魂) ---
 st.markdown("""
 <style>
     .main { font-family: '微軟正黑體', sans-serif; }
     
-    /* === 側邊欄排版優化 (關鍵修改) === */
-    /* 讓側邊欄選單的最後一個選項 (Setting) 往下推，並加上分隔線 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label:last-child {
-        margin-top: 50px;       /* 與上方選項的距離 */
-        padding-top: 20px;      /* 內距 */
-        border-top: 1px solid #555; /* 分隔線顏色 */
+    /* === 側邊欄排版魔法 (關鍵修改) === */
+    
+    /* 1. 把 Radio 選單容器變成彈性盒子，並強制拉高高度 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        display: flex;
+        flex-direction: column;
+        min-height: 75vh; /* 強制佔據視窗 75% 高度，把空間撐開 */
     }
     
-    /* 側邊欄標題美化 */
-    section[data-testid="stSidebar"] .stRadio > label {
-        color: #00CC99 !important;
+    /* 2. 找到最後一個選項 (Setting)，用 auto margin 把它推到最底 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:last-child {
+        margin-top: auto;       /* 自動填滿上方空間 -> 被擠到底部 */
+        padding-top: 20px;      /* 內距 */
+        border-top: 1px solid #555; /* 分隔線 */
         font-weight: bold;
+        color: #00CC99;         /* 讓 Setting 稍微顯眼一點 */
+    }
+    
+    /* 3. 調整一下版本號的位置 */
+    div[data-testid="stCaptionContainer"] {
+        text-align: center;
+        opacity: 0.5;
+        font-size: 12px;
+        margin-bottom: 20px;
     }
 
     /* === 其他通用樣式 === */
@@ -37,11 +49,14 @@ st.markdown("""
     .quest-paper:hover { transform: scale(1.02); }
     .pin { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 24px; z-index: 10; text-shadow: 2px 2px 2px rgba(0,0,0,0.3); }
     .priority-stamp { position: absolute; bottom: 10px; right: 10px; font-size: 20px; font-weight: bold; border: 2px solid; padding: 2px 8px; border-radius: 5px; transform: rotate(-10deg); opacity: 0.8; }
-    
+    .p-S { color: #FF0000; border-color: #FF0000; } .p-A { color: #FF8C00; border-color: #FF8C00; }
+    .p-B { color: #0000FF; border-color: #0000FF; } .p-C { color: #008000; border-color: #008000; }
+    .paper-title { font-size: 18px; font-weight: bold; border-bottom: 1px dashed #aaa; padding-bottom: 5px; margin-bottom: 10px; }
     /* 財務 */
     .metric-card { background-color: #1E1E1E; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 10px; text-align: center; }
     .metric-value { font-size: 24px; font-weight: bold; color: #00CC99; }
     .metric-label { font-size: 14px; color: #AAA; }
+    .budget-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,16 +81,15 @@ with st.sidebar:
     if "fin_nav" not in st.session_state:
         st.session_state["fin_nav"] = "📊 總覽"
 
-    # [關鍵] Setting 必須放在最後一個，CSS 才會對它生效
+    # 使用直向選單
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
         label_visibility="collapsed"
     )
     
-    # 這裡可以放版本號或 Logo，會顯示在 Setting 下方
-    st.markdown("---")
-    st.caption("Life Adventure OS v2.7")
+    # 底部版權宣告 (會被推到更下面)
+    st.caption("Life Adventure OS v2.8")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
