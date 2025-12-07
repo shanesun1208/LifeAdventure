@@ -27,6 +27,7 @@ st.markdown("""
     .metric-card { background-color: #1E1E1E; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 10px; text-align: center; }
     .metric-value { font-size: 24px; font-weight: bold; color: #00CC99; }
     .metric-label { font-size: 14px; color: #AAA; }
+    .budget-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -34,22 +35,28 @@ st.markdown("""
 SETTINGS = utils.get_settings()
 CUR_CITY = SETTINGS.get('Location', 'Taipei,TW')
 CUR_GOAL = SETTINGS.get('LifeGoal', '未設定')
+
 TYPE1 = SETTINGS.get('Type1_Options', '').split(',')
 TYPE2 = SETTINGS.get('Type2_Options', '').split(',')
+INCOME_TYPES = SETTINGS.get('Income_Types', '').split(',') # 新增
+FIXED_TYPES = SETTINGS.get('Fixed_Types', '').split(',')   # 新增
+
 TYPE1_STR = SETTINGS.get('Type1_Options', '')
 TYPE2_STR = SETTINGS.get('Type2_Options', '')
 
 # --- 4. 側邊欄導航 ---
 with st.sidebar:
     st.title("🧭 導航地圖")
+    if "fin_nav" not in st.session_state:
+        st.session_state["fin_nav"] = "📊 總覽"
+
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
         label_visibility="collapsed" 
     )
-    
     st.divider()
-    st.caption("Life Adventure OS v2.1")
+    st.caption("Life Adventure OS v2.3")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
@@ -58,9 +65,9 @@ if page == "我的小屋":
 elif page == "冒險日誌":
     diary.show_diary_page()
 
-# 修改點：這裡不用再傳 CUR_INCOME 了，因為 finance.py 會自己去 Income 分頁抓資料
+# 修改點：多傳了 income_types 和 fixed_types 進去
 elif page == "商會":
-    finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2)
+    finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES)
 
 elif page == "任務看板":
     quest.show_quest_board()

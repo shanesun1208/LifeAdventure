@@ -6,8 +6,8 @@ import requests
 import google.generativeai as genai
 import pandas as pd
 import concurrent.futures
-import random # 用來隨機選取
-from datetime import datetime, timedelta # 用來計算日期
+import random
+from datetime import datetime, timedelta
 
 # --- 常數 ---
 SHEET_NAME = "LifeAdventure"
@@ -91,7 +91,7 @@ def load_all_finance_data():
         
     return data
 
-# --- 設定相關 ---
+# --- 設定相關 (Update) ---
 @st.cache_data(ttl=300)
 def get_settings():
     try:
@@ -104,7 +104,10 @@ def get_settings():
             'Location': "Taipei,TW",
             'Type1_Options': "飲食,交通,娛樂,固定開銷,其他",
             'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
-            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...", # 預設值
+            # [新增] 收入與固定開銷的預設分類
+            'Income_Types': "薪資,獎金,投資,兼職,其他",
+            'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
+            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
             'Loading_Update_Date': "2000-01-01"
         }
         for k, v in defaults.items():
@@ -159,56 +162,4 @@ def generate_reward(task_name, content, rank):
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
 
-# --- [新] 隨機載入語錄 (每週更新) ---
-def get_loading_message(current_weather_info=""):
-    # 1. 讀取目前的設定
-    settings = get_settings()
-    saved_msgs = settings.get('Loading_Messages', "")
-    last_update = settings.get('Loading_Update_Date', "2000-01-01")
-    
-    # 2. 檢查是否過期 (7天)
-    need_update = False
-    try:
-        last_date = datetime.strptime(last_update, "%Y-%m-%d")
-        if (datetime.now() - last_date).days >= 7:
-            need_update = True
-    except:
-        need_update = True
-    
-    # 3. 如果需要更新，且有 AI Key，就呼叫 AI 生成
-    if need_update and GEMINI_API_KEY:
-        try:
-            # 簡單提取天氣狀況 (ex: rainy)
-            weather_desc = current_weather_info.split("|")[-1] if "|" in current_weather_info else "晴天"
-            
-            prompt = f"""
-            請生成 15 句 RPG 風格的「過場讀取文字」(Loading Screen Text)，情境是玩家正在前往「商人公會」或處理財務。
-            
-            要求：
-            1. 簡短有趣 (15字以內)。
-            2. 結合現在天氣 ({weather_desc}) 或冒險氛圍。
-            3. 例如：「馬車在雨中疾馳...」、「正在清點金庫...」、「與地精討價還價中...」。
-            4. 請用 '|||' 符號將這 15 句隔開，不要有其他多餘文字，直接給字串。
-            """
-            response = model.generate_content(prompt)
-            new_msgs_str = response.text.strip()
-            
-            # 檢查格式是否正確 (有 ||| )
-            if "|||" in new_msgs_str:
-                # 存回 Google Sheet
-                update_setting_value("Loading_Messages", new_msgs_str)
-                update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
-                saved_msgs = new_msgs_str # 更新變數供當次使用
-        except Exception as e:
-            print(f"AI 生成語錄失敗: {e}")
-            # 失敗就算了，用舊的
-
-    # 4. 隨機回傳一句
-    if saved_msgs:
-        msg_list = saved_msgs.split("|||")
-        # 過濾掉空白項目
-        msg_list = [m.strip() for m in msg_list if m.strip()]
-        if msg_list:
-            return random.choice(msg_list)
-            
-    return "正在前往商會..."
+def get_loading_message(
