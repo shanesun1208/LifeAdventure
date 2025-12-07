@@ -137,3 +137,10 @@ elif target_page == "商會":
     finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES, PAY_METHODS)
 
 elif target_page == "任務看板":
+    quest.show_quest_board(QUEST_TYPES)
+
+elif target_page == "接取任務追蹤":
+    quest.show_tracking()
+
+elif target_page == "Setting":
+    setting.show_setting_page(CUR_GOAL, CUR_CITY, utils.CITY_OPTIONS, TYPE1_STR, TYPE2_STR)
