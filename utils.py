@@ -7,7 +7,7 @@ import google.generativeai as genai
 import pandas as pd
 import concurrent.futures
 import random
-import base64 
+import base64
 from datetime import datetime, timedelta
 
 # --- 常數 ---
@@ -215,42 +215,47 @@ def save_chat_log(role, message):
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
 
-# --- [關鍵] 每日女僕圖 (路徑強化版) ---
+# --- [關鍵修改] 每日女僕圖 (自動校正 + 隨機) ---
 @st.cache_data(ttl=3600)
 def get_daily_maid_image():
-    # 預設圖 (網路上的圖，保證能顯示)
+    # 1. 預設備援圖 (如果所有本地圖片都讀失敗時顯示)
     default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
     
     try:
+        # 2. 取得設定紀錄
         settings = get_settings()
-        saved_img = settings.get('Daily_Maid_Img', "")
+        saved_img_record = settings.get('Daily_Maid_Img', "")
         last_date = settings.get('Daily_Maid_Date', "2000-01-01")
         
-        # [修改點] 使用絕對路徑，確保一定找得到資料夾
+        # 3. 鎖定本地資料夾路徑 (相對於 utils.py 的位置)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         folder_path = os.path.join(current_dir, "assets", "maid")
         
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        
-        # 1. 檢查資料夾是否存在
+        # 4. 檢查資料夾是否存在
         if not os.path.exists(folder_path):
             print(f"Warning: Folder not found: {folder_path}")
-            return default_url 
+            return default_url
             
-        # 2. 抓取所有圖片檔案
+        # 5. 現場點名：抓取所有確實存在的圖片
         files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        
         if not files:
-            print("Warning: No images in folder")
+            print("Warning: No images in assets/maid folder")
             return default_url
 
-        target_file = saved_img
-        
-        # 3. 換圖邏輯
-        if last_date != today_str or saved_img not in files:
+        # 6. 決定今天要顯示哪張圖 (核心邏輯)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        target_file = saved_img_record
+
+        # 邏輯判斷：
+        # 如果「已經過了一天」 或者 「記錄中的那張圖在資料夾裡找不到(被刪了)」
+        # -> 就從現有的檔案中重新隨機挑一張
+        if last_date != today_str or saved_img_record not in files:
             target_file = random.choice(files)
-            # 這裡我們只更新記憶體裡的目標，不強制寫入 Setting (避免快取問題)，反正明天會重算
+            # 這裡我們不強制回寫到 Sheet，避免頻繁寫入，
+            # 只要在記憶體中保持「今天對這個使用者顯示這張圖」即可。
             
-        # 4. 讀取並轉碼
+        # 7. 讀取並轉碼 Base64
         file_path = os.path.join(folder_path, target_file)
         
         with open(file_path, "rb") as image_file:
