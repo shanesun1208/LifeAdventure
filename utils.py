@@ -6,6 +6,8 @@ import requests
 import google.generativeai as genai
 import pandas as pd
 import concurrent.futures
+import random # 用來隨機選取
+from datetime import datetime, timedelta # 用來計算日期
 
 # --- 常數 ---
 SHEET_NAME = "LifeAdventure"
@@ -26,7 +28,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- Google Sheet 連線 (第一層：Client) ---
+# --- Google Sheet 連線 ---
 @st.cache_resource
 def get_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -40,8 +42,6 @@ def get_client():
         st.stop()
     return gspread.authorize(creds)
 
-# --- [新優化] Google Sheet 連線 (第二層：Spreadsheet) ---
-# 快取這個物件，避免每次都要重新搜尋試算表
 @st.cache_resource
 def get_spreadsheet():
     client = get_client()
@@ -51,19 +51,15 @@ def get_spreadsheet():
         st.error(f"無法開啟試算表 '{SHEET_NAME}'：{e}")
         return None
 
-# --- [修正] 取得分頁 (包含錯誤顯示) ---
 def get_worksheet(worksheet_name):
     sh = get_spreadsheet()
     if sh:
         try:
             return sh.worksheet(worksheet_name)
         except gspread.WorksheetNotFound:
-            # 這是真的找不到分頁
-            st.error(f"❌ 找不到分頁：'{worksheet_name}'，請檢查 Google Sheet 名稱。")
+            st.error(f"❌ 找不到分頁：'{worksheet_name}'")
             return None
         except Exception as e:
-            # 這是其他錯誤 (例如 API 流量限制)
-            # 我們暫時不顯示 error，以免畫面太亂，但可以在這裡 print(e) 到後台
             print(f"Error fetching {worksheet_name}: {e}")
             return None
     return None
@@ -82,7 +78,6 @@ def load_all_finance_data():
     data = {}
     
     def fetch_one(name):
-        # 這裡直接呼叫 worksheet 會比較快，因為 spreadsheet 已經被快取了
         sheet = get_worksheet(name)
         if sheet:
             return name, pd.DataFrame(sheet.get_all_records())
@@ -108,7 +103,9 @@ def get_settings():
             'LifeGoal': "未設定",
             'Location': "Taipei,TW",
             'Type1_Options': "飲食,交通,娛樂,固定開銷,其他",
-            'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租"
+            'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
+            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...", # 預設值
+            'Loading_Update_Date': "2000-01-01"
         }
         for k, v in defaults.items():
             if k not in settings: settings[k] = v
@@ -161,3 +158,57 @@ def generate_reward(task_name, content, rank):
         prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
+
+# --- [新] 隨機載入語錄 (每週更新) ---
+def get_loading_message(current_weather_info=""):
+    # 1. 讀取目前的設定
+    settings = get_settings()
+    saved_msgs = settings.get('Loading_Messages', "")
+    last_update = settings.get('Loading_Update_Date', "2000-01-01")
+    
+    # 2. 檢查是否過期 (7天)
+    need_update = False
+    try:
+        last_date = datetime.strptime(last_update, "%Y-%m-%d")
+        if (datetime.now() - last_date).days >= 7:
+            need_update = True
+    except:
+        need_update = True
+    
+    # 3. 如果需要更新，且有 AI Key，就呼叫 AI 生成
+    if need_update and GEMINI_API_KEY:
+        try:
+            # 簡單提取天氣狀況 (ex: rainy)
+            weather_desc = current_weather_info.split("|")[-1] if "|" in current_weather_info else "晴天"
+            
+            prompt = f"""
+            請生成 15 句 RPG 風格的「過場讀取文字」(Loading Screen Text)，情境是玩家正在前往「商人公會」或處理財務。
+            
+            要求：
+            1. 簡短有趣 (15字以內)。
+            2. 結合現在天氣 ({weather_desc}) 或冒險氛圍。
+            3. 例如：「馬車在雨中疾馳...」、「正在清點金庫...」、「與地精討價還價中...」。
+            4. 請用 '|||' 符號將這 15 句隔開，不要有其他多餘文字，直接給字串。
+            """
+            response = model.generate_content(prompt)
+            new_msgs_str = response.text.strip()
+            
+            # 檢查格式是否正確 (有 ||| )
+            if "|||" in new_msgs_str:
+                # 存回 Google Sheet
+                update_setting_value("Loading_Messages", new_msgs_str)
+                update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
+                saved_msgs = new_msgs_str # 更新變數供當次使用
+        except Exception as e:
+            print(f"AI 生成語錄失敗: {e}")
+            # 失敗就算了，用舊的
+
+    # 4. 隨機回傳一句
+    if saved_msgs:
+        msg_list = saved_msgs.split("|||")
+        # 過濾掉空白項目
+        msg_list = [m.strip() for m in msg_list if m.strip()]
+        if msg_list:
+            return random.choice(msg_list)
+            
+    return "正在前往商會..."

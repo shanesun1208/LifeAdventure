@@ -9,16 +9,23 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
-from utils import get_worksheet, load_all_finance_data
+# 引入新函式 get_loading_message, get_weather
+from utils import get_worksheet, load_all_finance_data, get_loading_message, get_weather
 
 from . import dashboard, ledger, assets, budget
 
 def show_finance_page(current_city, current_goal, type1_list, type2_list):
     st.title("💰 商會 (Merchant Guild)")
     
-    # --- 1. 資料載入控制 (Session State 緩存術) ---
+    # --- [優化] 取得動態 Loading 文字 ---
+    # 先抓天氣，讓 AI 可以參考
+    weather_info = get_weather(current_city)
+    loading_text = get_loading_message(weather_info)
+    
+    # --- 1. 資料載入控制 ---
     if "fin_data_loaded" not in st.session_state:
-        with st.spinner("正在與總行同步帳本..."):
+        # 這裡會顯示隨機的 RPG 文字！
+        with st.spinner(f"⏳ {loading_text}"):
             all_data = load_all_finance_data()
             st.session_state['df_fin'] = all_data.get("Finance", pd.DataFrame())
             st.session_state['df_fixed'] = all_data.get("FixedExpenses", pd.DataFrame())
@@ -96,13 +103,12 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
     # F. 自由現金
     free_cash = total_income - total_fixed - total_variable - reserve_goal
 
-    # --- 3. 介面導航 (修正：加上 horizontal=True) ---
+    # --- 3. 介面導航 ---
     nav_options = ["📊 總覽", "💰 收入", "📝 支出", "🏛️ 固定", "📅 預算", "🏦 預備金"]
     
     if "fin_nav" not in st.session_state:
-        st.session_state["fin_nav"] = "📝 支出"
+        st.session_state["fin_nav"] = "📊 總覽" # 預設回總覽
 
-    # [這裡改動了] 加上 horizontal=True，讓它變橫排
     selected_tab = st.radio(
         "商會分頁", 
         nav_options, 
