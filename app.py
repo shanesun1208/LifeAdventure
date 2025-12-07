@@ -38,8 +38,10 @@ CUR_GOAL = SETTINGS.get('LifeGoal', '未設定')
 
 TYPE1 = SETTINGS.get('Type1_Options', '').split(',')
 TYPE2 = SETTINGS.get('Type2_Options', '').split(',')
-INCOME_TYPES = SETTINGS.get('Income_Types', '').split(',') # 新增
-FIXED_TYPES = SETTINGS.get('Fixed_Types', '').split(',')   # 新增
+INCOME_TYPES = SETTINGS.get('Income_Types', '').split(',')
+FIXED_TYPES = SETTINGS.get('Fixed_Types', '').split(',')
+# [新增] 讀取付款方式
+PAY_METHODS = SETTINGS.get('Payment_Methods', '').split(',')
 
 TYPE1_STR = SETTINGS.get('Type1_Options', '')
 TYPE2_STR = SETTINGS.get('Type2_Options', '')
@@ -53,10 +55,11 @@ with st.sidebar:
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
-        label_visibility="collapsed" 
+        label_visibility="collapsed",
+        horizontal=True 
     )
     st.divider()
-    st.caption("Life Adventure OS v2.3")
+    st.caption("Life Adventure OS v2.4")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
@@ -65,9 +68,9 @@ if page == "我的小屋":
 elif page == "冒險日誌":
     diary.show_diary_page()
 
-# 修改點：多傳了 income_types 和 fixed_types 進去
+# 修改點：多傳了 PAY_METHODS
 elif page == "商會":
-    finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES)
+    finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES, PAY_METHODS)
 
 elif page == "任務看板":
     quest.show_quest_board()
