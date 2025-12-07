@@ -7,6 +7,7 @@ import google.generativeai as genai
 import pandas as pd
 import concurrent.futures
 import random
+import base64 # [關鍵] 圖片轉碼需要這個
 from datetime import datetime, timedelta
 
 # --- 常數 ---
@@ -73,7 +74,7 @@ def load_sheet_data(worksheet_name):
 
 @st.cache_data(ttl=60)
 def load_all_finance_data():
-    sheet_names = ["Finance", "FixedExpenses", "Income", "Budget", "ReserveFund", "QuestBoard", "ChatHistory"] # 加入 ChatHistory
+    sheet_names = ["Finance", "FixedExpenses", "Income", "Budget", "ReserveFund", "QuestBoard", "ChatHistory"]
     data = {}
     
     def fetch_one(name):
@@ -107,9 +108,11 @@ def get_settings():
             'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
             'Quest_Types': "工作,採購,禪行,其他",
             'Payment_Methods': "現金,信用卡",
-            'Maid_Image_URL': "https://cdn-icons-png.flaticon.com/512/4140/4140047.png", # 預設圖片 (可愛版)
+            'Maid_Image_URL': "https://cdn-icons-png.flaticon.com/512/4140/4140047.png",
             'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
-            'Loading_Update_Date': "2000-01-01"
+            'Loading_Update_Date': "2000-01-01",
+            'Daily_Maid_Img': "", 
+            'Daily_Maid_Date': "2000-01-01"
         }
         for k, v in defaults.items():
             if k not in settings: settings[k] = v
@@ -178,11 +181,10 @@ def get_loading_message(current_weather_info=""):
         if msg_list: return random.choice(msg_list)
     return "正在前往商會..."
 
-# --- [新] 聊天機器人核心 ---
+# --- 聊天機器人 ---
 def chat_with_maid(user_input, chat_history, context_info):
     if not GEMINI_API_KEY: return "主人，我現在無法連線到大腦 (API Key Missing)。"
     
-    # 組合歷史對話 (取最近 5 則，避免太長)
     history_text = ""
     for msg in chat_history[-5:]:
         role = "主人" if msg['Role'] == 'user' else "女僕"
@@ -213,3 +215,47 @@ def save_chat_log(role, message):
     if sheet:
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
+
+# --- [關鍵] 每日女僕圖 (支援 PNG/JPG) ---
+def get_daily_maid_image():
+    settings = get_settings()
+    saved_img = settings.get('Daily_Maid_Img', "")
+    last_date = settings.get('Daily_Maid_Date', "2000-01-01")
+    default_url = settings.get('Maid_Image_URL', "https://cdn-icons-png.flaticon.com/512/4140/4140047.png")
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    folder_path = "assets/maid"
+    
+    # 檢查是否有本地圖庫
+    if not os.path.exists(folder_path):
+        return default_url 
+        
+    files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    if not files:
+        return default_url
+
+    # 決定要用哪張圖
+    target_file = saved_img
+    
+    # 如果過期，或圖檔被刪了，就換一張新的
+    if last_date != today_str or saved_img not in files:
+        target_file = random.choice(files)
+        try:
+            update_setting_value("Daily_Maid_Img", target_file)
+            update_setting_value("Daily_Maid_Date", today_str)
+        except: pass
+
+    # 轉成 Base64 字串 (讓 CSS 可以讀)
+    try:
+        file_path = os.path.join(folder_path, target_file)
+        with open(file_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        
+        # 判斷 MIME Type (PNG 要用 image/png)
+        ext = target_file.split('.')[-1].lower()
+        mime_type = "image/jpeg" if ext in ['jpg', 'jpeg'] else "image/png"
+        
+        return f"data:{mime_type};base64,{encoded_string}"
+    except Exception as e:
+        print(f"Image load error: {e}")
+        return default_url
