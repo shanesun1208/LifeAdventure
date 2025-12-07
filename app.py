@@ -5,29 +5,43 @@ from views import home, finance, quest, diary, setting
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="Life Adventure OS", page_icon="🛡️", layout="wide")
 
-# --- 2. CSS 樣式 ---
+# --- 2. CSS 樣式 (介面靈魂) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Long+Cang&display=swap');
-    
     .main { font-family: '微軟正黑體', sans-serif; }
+    
+    /* === 側邊欄排版優化 (關鍵修改) === */
+    /* 讓側邊欄選單的最後一個選項 (Setting) 往下推，並加上分隔線 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:last-child {
+        margin-top: 50px;       /* 與上方選項的距離 */
+        padding-top: 20px;      /* 內距 */
+        border-top: 1px solid #555; /* 分隔線顏色 */
+    }
+    
+    /* 側邊欄標題美化 */
+    section[data-testid="stSidebar"] .stRadio > label {
+        color: #00CC99 !important;
+        font-weight: bold;
+    }
+
+    /* === 其他通用樣式 === */
     .greeting-box { background: linear-gradient(135deg, #2C3E50 0%, #000000 100%); padding: 30px; border-radius: 15px; color: white; margin-bottom: 20px; border-left: 8px solid #00CC99; }
     .goal-box { background-color: #262730; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #444; margin-bottom: 30px; }
     .goal-text { font-size: 24px; font-weight: bold; color: #FFF; }
     .adventure-card { background-color: #262730; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 5px solid #00CC99; }
     .ai-comment { font-size: 15px; color: #00CC99; font-weight: bold; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px; background-color: rgba(0, 204, 153, 0.1); padding: 10px; border-radius: 5px; }
     
-    /* 任務看板 (更新版) */
-    .corkboard-title { 
-        font-family: 'Long Cang', cursive; /* 標題用手寫體 */
-        font-size: 36px; font-weight: bold; color: #E0E0E0; text-align: center; border-bottom: 2px solid #8B4513; margin-bottom: 20px; padding-bottom: 10px; 
-    }
+    /* 任務看板 */
+    .corkboard-title { font-size: 30px; font-weight: bold; color: #E0E0E0; text-align: center; border-bottom: 2px solid #8B4513; margin-bottom: 20px; padding-bottom: 10px; }
+    .quest-paper { background-color: #FDF5E6; color: #2F4F4F; padding: 20px; margin: 10px; border-radius: 2px; box-shadow: 3px 3px 5px rgba(0,0,0,0.3); position: relative; border-top: 1px solid #FFF; border-bottom: 1px solid #CCC; transition: transform 0.2s; }
+    .quest-paper:hover { transform: scale(1.02); }
+    .pin { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 24px; z-index: 10; text-shadow: 2px 2px 2px rgba(0,0,0,0.3); }
+    .priority-stamp { position: absolute; bottom: 10px; right: 10px; font-size: 20px; font-weight: bold; border: 2px solid; padding: 2px 8px; border-radius: 5px; transform: rotate(-10deg); opacity: 0.8; }
     
     /* 財務 */
     .metric-card { background-color: #1E1E1E; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 10px; text-align: center; }
     .metric-value { font-size: 24px; font-weight: bold; color: #00CC99; }
     .metric-label { font-size: 14px; color: #AAA; }
-    .budget-label { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -41,7 +55,7 @@ TYPE2 = SETTINGS.get('Type2_Options', '').split(',')
 INCOME_TYPES = SETTINGS.get('Income_Types', '').split(',')
 FIXED_TYPES = SETTINGS.get('Fixed_Types', '').split(',')
 PAY_METHODS = SETTINGS.get('Payment_Methods', '').split(',')
-QUEST_TYPES = SETTINGS.get('Quest_Types', '').split(',') # 新增
+QUEST_TYPES = SETTINGS.get('Quest_Types', '').split(',')
 
 TYPE1_STR = SETTINGS.get('Type1_Options', '')
 TYPE2_STR = SETTINGS.get('Type2_Options', '')
@@ -52,13 +66,16 @@ with st.sidebar:
     if "fin_nav" not in st.session_state:
         st.session_state["fin_nav"] = "📊 總覽"
 
+    # [關鍵] Setting 必須放在最後一個，CSS 才會對它生效
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
         label_visibility="collapsed"
     )
-    st.divider()
-    st.caption("Life Adventure OS v2.6")
+    
+    # 這裡可以放版本號或 Logo，會顯示在 Setting 下方
+    st.markdown("---")
+    st.caption("Life Adventure OS v2.7")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
@@ -70,7 +87,6 @@ elif page == "冒險日誌":
 elif page == "商會":
     finance.show_finance_page(CUR_CITY, CUR_GOAL, TYPE1, TYPE2, INCOME_TYPES, FIXED_TYPES, PAY_METHODS)
 
-# 修改點：傳入 QUEST_TYPES
 elif page == "任務看板":
     quest.show_quest_board(QUEST_TYPES)
 
