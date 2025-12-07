@@ -91,7 +91,7 @@ def load_all_finance_data():
         
     return data
 
-# --- 設定相關 (Update) ---
+# --- 設定相關 ---
 @st.cache_data(ttl=300)
 def get_settings():
     try:
@@ -104,7 +104,6 @@ def get_settings():
             'Location': "Taipei,TW",
             'Type1_Options': "飲食,交通,娛樂,固定開銷,其他",
             'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
-            # [新增] 收入與固定開銷的預設分類
             'Income_Types': "薪資,獎金,投資,兼職,其他",
             'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
             'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
@@ -132,7 +131,11 @@ def update_setting_value(key, val):
 def get_weather(city):
     if not WEATHER_API_KEY: return "📍 API未設定"
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
+        # [安全寫法] 將長網址拆開，避免複製時斷行錯誤
+        base_url = "https://api.openweathermap.org/data/2.5/weather"
+        query = f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
+        url = base_url + query
+        
         res = requests.get(url).json()
         return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C"
     except: return f"📍 {city}"
@@ -144,7 +147,10 @@ def get_ai_greeting(hour, weather):
     if 5<=hour<11: period="早晨"
     elif 11<=hour<14: period="中午"
     elif 14<=hour<18: period="下午"
-    prompt = f"現在是{period}({hour}點)，天氣{weather}。請以RPG櫃台小姐語氣給予20字內溫暖問候。"
+    
+    # 使用三引號確保換行安全
+    prompt = f"""現在是{period}({hour}點)，天氣{weather}。請以RPG櫃台小姐語氣給予20字內溫暖問候。"""
+    
     try: return model.generate_content(prompt).text.strip()
     except: return "今天也要加油喔！"
 
@@ -162,4 +168,40 @@ def generate_reward(task_name, content, rank):
         return model.generate_content(prompt).text.strip()
     except: return "神秘的小禮物"
 
-def get_loading_message(
+def get_loading_message(current_weather_info=""):
+    settings = get_settings()
+    saved_msgs = settings.get('Loading_Messages', "")
+    last_update = settings.get('Loading_Update_Date', "2000-01-01")
+    
+    need_update = False
+    try:
+        last_date = datetime.strptime(last_update, "%Y-%m-%d")
+        if (datetime.now() - last_date).days >= 7:
+            need_update = True
+    except:
+        need_update = True
+    
+    if need_update and GEMINI_API_KEY:
+        try:
+            weather_desc = current_weather_info.split("|")[-1] if "|" in current_weather_info else "晴天"
+            
+            # [安全寫法] 使用括號連接多行字串，避免縮排錯誤
+            prompt = (
+                f"請生成 15 句 RPG 風格的「過場讀取文字」。情境：前往商人公會或處理財務。"
+                f"要求：簡短有趣(15字內)、結合天氣({weather_desc})。"
+                f"請用 '|||' 符號將這 15 句隔開，不要有其他多餘文字。"
+            )
+            
+            response = model.generate_content(prompt)
+            new_msgs_str = response.text.strip()
+            if "|||" in new_msgs_str:
+                update_setting_value("Loading_Messages", new_msgs_str)
+                update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
+                saved_msgs = new_msgs_str
+        except Exception as e:
+            print(f"AI error: {e}")
+
+    if saved_msgs:
+        msg_list = [m.strip() for m in saved_msgs.split("|||") if m.strip()]
+        if msg_list: return random.choice(msg_list)
+    return "正在前往商會..."
