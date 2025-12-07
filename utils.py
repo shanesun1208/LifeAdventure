@@ -25,30 +25,28 @@ def init_api():
 
 WEATHER_API_KEY, GEMINI_API_KEY = init_api()
 
-# --- [關鍵修改] API 設定與診斷區塊 ---
+# --- [關鍵修改] 指定正確的模型名稱 ---
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # 1. 印出版本與診斷資訊 (請看終端機)
-    print("--------------------------------------------------")
+    # 您提供的清單顯示有 gemini-2.0-flash，我們就用這個！
+    # 這比舊的 gemini-pro 更快更聰明
     try:
-        print(f"🔍 目前 google-generativeai 版本: {genai.__version__}")
-        print("📋 API 可用模型清單:")
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                print(f"   - {m.name}")
-    except Exception as e:
-        print(f"⚠️ 無法列出模型清單 (可能是版本過舊): {e}")
-    print("--------------------------------------------------")
-
-    # 2. 設定模型 (使用最穩定的 gemini-pro)
-    try:
-        # 改用 gemini-pro，避免 404 錯誤
-        model = genai.GenerativeModel('gemini-pro')
-        print("✅ 已成功設定模型: gemini-pro")
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        print("✅ 已成功設定模型: gemini-2.0-flash")
     except Exception as e:
         print(f"❌ 模型設定失敗: {e}")
-        model = None
+        # 如果還是失敗，嘗試最後一招：自動抓取列表中的第一個可用模型
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            if available_models:
+                target = available_models[0].replace("models/", "")
+                model = genai.GenerativeModel(target)
+                print(f"🔄 自動切換至模型: {target}")
+            else:
+                model = None
+        except:
+            model = None
 
 # --- Google Sheet 連線 ---
 @st.cache_resource
@@ -205,9 +203,8 @@ def get_loading_message(current_weather_info=""):
 def chat_with_maid(user_input, chat_history, context_info):
     if not GEMINI_API_KEY: return "主人，我現在無法連線到大腦 (API Key Missing)。"
     
-    # [修正] 增加保護機制，避免 model 未初始化
     if 'model' not in globals() or model is None:
-        return "主人，我的語言模組發生錯誤 (Model not initialized)。"
+        return "主人，我的語言模組目前無法使用，請檢查終端機的錯誤訊息。"
 
     history_text = ""
     for msg in chat_history[-5:]:
@@ -240,10 +237,9 @@ def save_chat_log(role, message):
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
 
-# --- [關鍵修改] 每日女僕圖 (路徑直讀版) ---
 @st.cache_data(ttl=3600)
 def get_daily_maid_image():
-    # 預設圖 (網路圖)
+    # 預設圖
     default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
     
     try:
