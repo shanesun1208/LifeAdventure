@@ -1,34 +1,29 @@
 import streamlit as st
 import utils
-from views import home, finance, quest, diary, setting
+# 新增 maid 模組
+from views import home, finance, quest, diary, setting, maid
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="Life Adventure OS", page_icon="🛡️", layout="wide")
 
-# --- 2. CSS 樣式 (UI 靈魂) ---
+# --- 2. CSS 樣式 ---
 st.markdown("""
 <style>
     .main { font-family: '微軟正黑體', sans-serif; }
     
-    /* === 側邊欄排版魔法 (關鍵修改) === */
-    
-    /* 1. 把 Radio 選單容器變成彈性盒子，並強制拉高高度 */
+    /* 側邊欄置底 CSS */
     section[data-testid="stSidebar"] div[role="radiogroup"] {
         display: flex;
         flex-direction: column;
-        min-height: 75vh; /* 強制佔據視窗 75% 高度，把空間撐開 */
+        min-height: 75vh;
     }
-    
-    /* 2. 找到最後一個選項 (Setting)，用 auto margin 把它推到最底 */
     section[data-testid="stSidebar"] div[role="radiogroup"] > label:last-child {
-        margin-top: auto;       /* 自動填滿上方空間 -> 被擠到底部 */
-        padding-top: 20px;      /* 內距 */
-        border-top: 1px solid #555; /* 分隔線 */
+        margin-top: auto;
+        padding-top: 20px;
+        border-top: 1px solid #555;
         font-weight: bold;
-        color: #00CC99;         /* 讓 Setting 稍微顯眼一點 */
+        color: #00CC99;
     }
-    
-    /* 3. 調整一下版本號的位置 */
     div[data-testid="stCaptionContainer"] {
         text-align: center;
         opacity: 0.5;
@@ -36,14 +31,13 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* === 其他通用樣式 === */
+    /* 其他樣式 */
     .greeting-box { background: linear-gradient(135deg, #2C3E50 0%, #000000 100%); padding: 30px; border-radius: 15px; color: white; margin-bottom: 20px; border-left: 8px solid #00CC99; }
     .goal-box { background-color: #262730; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #444; margin-bottom: 30px; }
     .goal-text { font-size: 24px; font-weight: bold; color: #FFF; }
     .adventure-card { background-color: #262730; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 5px solid #00CC99; }
     .ai-comment { font-size: 15px; color: #00CC99; font-weight: bold; margin-top: 15px; border-top: 1px solid #555; padding-top: 10px; background-color: rgba(0, 204, 153, 0.1); padding: 10px; border-radius: 5px; }
     
-    /* 任務看板 */
     .corkboard-title { font-size: 30px; font-weight: bold; color: #E0E0E0; text-align: center; border-bottom: 2px solid #8B4513; margin-bottom: 20px; padding-bottom: 10px; }
     .quest-paper { background-color: #FDF5E6; color: #2F4F4F; padding: 20px; margin: 10px; border-radius: 2px; box-shadow: 3px 3px 5px rgba(0,0,0,0.3); position: relative; border-top: 1px solid #FFF; border-bottom: 1px solid #CCC; transition: transform 0.2s; }
     .quest-paper:hover { transform: scale(1.02); }
@@ -52,7 +46,7 @@ st.markdown("""
     .p-S { color: #FF0000; border-color: #FF0000; } .p-A { color: #FF8C00; border-color: #FF8C00; }
     .p-B { color: #0000FF; border-color: #0000FF; } .p-C { color: #008000; border-color: #008000; }
     .paper-title { font-size: 18px; font-weight: bold; border-bottom: 1px dashed #aaa; padding-bottom: 5px; margin-bottom: 10px; }
-    /* 財務 */
+    
     .metric-card { background-color: #1E1E1E; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 10px; text-align: center; }
     .metric-value { font-size: 24px; font-weight: bold; color: #00CC99; }
     .metric-label { font-size: 14px; color: #AAA; }
@@ -81,15 +75,12 @@ with st.sidebar:
     if "fin_nav" not in st.session_state:
         st.session_state["fin_nav"] = "📊 總覽"
 
-    # 使用直向選單
     page = st.radio(
         "導航選單", 
         ["我的小屋", "冒險日誌", "商會", "任務看板", "接取任務追蹤", "Setting"],
         label_visibility="collapsed"
     )
-    
-    # 底部版權宣告 (會被推到更下面)
-    st.caption("Life Adventure OS v2.8")
+    st.caption("Life Adventure OS v2.9")
 
 # --- 5. 頁面路由 ---
 if page == "我的小屋":
@@ -109,3 +100,6 @@ elif page == "接取任務追蹤":
 
 elif page == "Setting":
     setting.show_setting_page(CUR_GOAL, CUR_CITY, utils.CITY_OPTIONS, TYPE1_STR, TYPE2_STR)
+
+# --- 6. 全域懸浮秘書 (放在最後面，確保浮在最上層) ---
+maid.render_maid_widget()
