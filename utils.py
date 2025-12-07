@@ -25,9 +25,30 @@ def init_api():
 
 WEATHER_API_KEY, GEMINI_API_KEY = init_api()
 
+# --- [關鍵修改] API 設定與診斷區塊 ---
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    
+    # 1. 印出版本與診斷資訊 (請看終端機)
+    print("--------------------------------------------------")
+    try:
+        print(f"🔍 目前 google-generativeai 版本: {genai.__version__}")
+        print("📋 API 可用模型清單:")
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                print(f"   - {m.name}")
+    except Exception as e:
+        print(f"⚠️ 無法列出模型清單 (可能是版本過舊): {e}")
+    print("--------------------------------------------------")
+
+    # 2. 設定模型 (使用最穩定的 gemini-pro)
+    try:
+        # 改用 gemini-pro，避免 404 錯誤
+        model = genai.GenerativeModel('gemini-pro')
+        print("✅ 已成功設定模型: gemini-pro")
+    except Exception as e:
+        print(f"❌ 模型設定失敗: {e}")
+        model = None
 
 # --- Google Sheet 連線 ---
 @st.cache_resource
@@ -184,6 +205,10 @@ def get_loading_message(current_weather_info=""):
 def chat_with_maid(user_input, chat_history, context_info):
     if not GEMINI_API_KEY: return "主人，我現在無法連線到大腦 (API Key Missing)。"
     
+    # [修正] 增加保護機制，避免 model 未初始化
+    if 'model' not in globals() or model is None:
+        return "主人，我的語言模組發生錯誤 (Model not initialized)。"
+
     history_text = ""
     for msg in chat_history[-5:]:
         role = "主人" if msg['Role'] == 'user' else "女僕"
