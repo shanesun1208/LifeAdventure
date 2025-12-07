@@ -15,24 +15,13 @@ def show_diary_page():
     st.title("📖 冒險篇章 (Adventure Log)")
     st.caption("記載著那些偉大的旅程，以及通往異世界的入口...")
 
-    # --- CSS 美化: 魔法傳送門風格 ---
+    # --- CSS 美化 ---
     st.markdown("""
     <style>
-    /* 冒險卡片底色 - 深邃魔法風 */
-    .adventure-card-container {
-        background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); /* 範例漸層 */
-        background: #2b2b2b;
-        border: 1px solid #444;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-        position: relative;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
     .adventure-title {
         font-size: 22px;
         font-weight: bold;
-        color: #FFD700; /* 金色標題 */
+        color: #FFD700;
         margin-bottom: 5px;
     }
     .adventure-desc {
@@ -41,20 +30,26 @@ def show_diary_page():
         margin-bottom: 15px;
         font-style: italic;
     }
-    .portal-status {
-        font-size: 12px;
-        color: #888;
-        text-align: right;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-    sheet_adv = get_worksheet("Adventures") # 請確認您的 Sheet 名稱是 Adventures 或 Sheet1
+    # --- 1. 決定要用哪個分頁 (關鍵修正) ---
+    # 先找 Adventures，找不到才找 Sheet1
+    target_sheet_name = "Adventures"
+    sheet_adv = get_worksheet("Adventures")
+    
     if not sheet_adv:
-        # 如果找不到 Adventures，嘗試找 Sheet1 (相容舊版)
-        sheet_adv = get_worksheet("Sheet1")
+        # 如果真的找不到 Adventures，再試試看 Sheet1
+        sheet_check = get_worksheet("Sheet1")
+        if sheet_check:
+            target_sheet_name = "Sheet1"
+            sheet_adv = sheet_check
+        else:
+            # 兩個都找不到，就報錯並停止
+            st.error("❌ 找不到資料表！請去 Google Sheet 新增一個分頁，命名為 'Adventures'。")
+            st.stop()
 
-    # --- 1. 啟動新冒險 (新增區) ---
+    # --- 2. 啟動新冒險 (新增區) ---
     with st.expander("✨ 撰寫新篇章 (Start New Adventure)", expanded=False):
         with st.form("new_adventure"):
             c1, c2 = st.columns([2, 1])
@@ -66,46 +61,37 @@ def show_diary_page():
             st.info("💡 Notion 傳送門連結可以在建立後，於下方卡片中填入。")
             
             if st.form_submit_button("🚀 展開冒險"):
-                if sheet_adv:
-                    # 欄位: Name, Description, Status, StartDate, NotionLink
-                    sheet_adv.append_row([a_name, a_desc, a_status, str(a_date), ""])
-                    st.success(f"篇章「{a_name}」已建立！")
-                    load_sheet_data.clear() # 清快取
-                    st.rerun()
-                else:
-                    st.error("找不到 Adventures (或 Sheet1) 分頁，請檢查資料庫。")
+                # 欄位: Name, Description, Status, StartDate, NotionLink
+                sheet_adv.append_row([a_name, a_desc, a_status, str(a_date), ""])
+                st.success(f"篇章「{a_name}」已建立！")
+                load_sheet_data.clear() # 清快取
+                st.rerun()
 
     st.divider()
 
-    # --- 2. 冒險列表 (傳送門邏輯) ---
-    # 這裡我們不使用 load_sheet_data 快取，因為連結輸入需要即時更新
-    # 或者我們使用快取，但在更新連結時強制清除
-    
-    # 為了效能，我們還是讀快取，但在更新連結時清除
+    # --- 3. 讀取並顯示 ---
     try:
-        # 嘗試讀取 Adventures，如果沒有就讀 Sheet1
-        df_adv = load_sheet_data("Adventures")
-        if df_adv.empty: df_adv = load_sheet_data("Sheet1")
+        # 只讀取剛剛確認存在的那一個分頁
+        df_adv = load_sheet_data(target_sheet_name)
 
         if not df_adv.empty:
             # 確保欄位存在
-            if "Name" in df_adv.columns and "NotionLink" in df_adv.columns:
+            if "Name" in df_adv.columns:
                 
                 # 倒序顯示，新的在上面
                 for i, (index, row) in enumerate(df_adv.sort_index(ascending=False).iterrows()):
                     
                     notion_link = str(row.get('NotionLink', '')).strip()
-                    has_link = len(notion_link) > 5 # 簡單判斷連結長度
+                    has_link = len(notion_link) > 5 
                     
                     # 卡片容器
                     with st.container():
-                        # 使用 columns 排版
                         c_info, c_portal = st.columns([3, 2])
                         
                         with c_info:
                             st.markdown(f"""
                             <div class="adventure-title">🛡️ {row['Name']}</div>
-                            <div class="adventure-desc">{row['Description']}</div>
+                            <div class="adventure-desc">{row.get('Description', '')}</div>
                             <div style="font-size:12px; color:#aaa;">📅 啟程: {row['StartDate']} | 🚩 狀態: {row['Status']}</div>
                             """, unsafe_allow_html=True)
 
@@ -113,23 +99,20 @@ def show_diary_page():
                             st.write("") # Spacer
                             
                             if has_link:
-                                # === 門是開的 (顯示傳送按鈕) ===
+                                # === 門是開的 ===
                                 st.success("🌀 傳送門已開啟")
-                                # Streamlit 的 Link Button
                                 st.link_button("🔮 進入 Notion 冒險世界", notion_link, use_container_width=True)
                                 
-                                # 提供修改連結的機會 (收在折疊裡)
+                                # 修改區
                                 with st.expander("⚙️ 設定"):
                                     new_link_edit = st.text_input("修正連結", value=notion_link, key=f"edit_link_{index}")
                                     if st.button("更新", key=f"btn_upd_{index}"):
                                         # 更新資料庫 (Row = index + 2)
-                                        # NotionLink 是第 5 欄 (E欄)
                                         sheet_adv.update_cell(index + 2, 5, new_link_edit)
                                         st.toast("連結已更新！")
                                         load_sheet_data.clear()
                                         st.rerun()
                                     
-                                    # 刪除功能
                                     if st.button("🗑️ 刪除篇章", key=f"del_adv_{index}"):
                                         sheet_adv.delete_rows(index + 2)
                                         st.success("篇章已刪除")
@@ -137,15 +120,14 @@ def show_diary_page():
                                         st.rerun()
 
                             else:
-                                # === 門是關的 (顯示鑰匙孔) ===
+                                # === 門是關的 ===
                                 st.warning("🚪 傳送門緊閉中...")
                                 input_link = st.text_input("🔑 插入鑰匙 (輸入 Notion 連結)", key=f"input_{index}", placeholder="https://notion.so/...")
                                 
                                 if st.button("✨ 啟動傳送門", key=f"activate_{index}"):
                                     if input_link:
-                                        # 寫入連結
                                         sheet_adv.update_cell(index + 2, 5, input_link)
-                                        st.balloons() # 儀式感！
+                                        st.balloons()
                                         st.success("能量注入！傳送門開啟中...")
                                         load_sheet_data.clear()
                                         st.rerun()
@@ -155,9 +137,9 @@ def show_diary_page():
                         st.markdown("---") # 分隔線
 
             else:
-                st.error("資料表欄位錯誤：請確認標題列為 Name, Description, Status, StartDate, NotionLink")
+                st.error(f"資料表欄位錯誤：請確認 {target_sheet_name} 的標題列包含 Name, Description, Status, StartDate, NotionLink")
         else:
             st.info("目前還沒有任何冒險篇章，快去寫下第一章吧！")
             
     except Exception as e:
-        st.error(f"讀取錯誤 (可能需要去 Google Sheet 建立 'Adventures' 分頁): {e}")
+        st.error(f"讀取錯誤: {e}")
