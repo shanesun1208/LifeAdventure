@@ -11,15 +11,10 @@ sys.path.append(parent_dir)
 from utils import get_worksheet, generate_reward, update_setting_value, load_sheet_data
 
 def show_quest_board(quest_types):
-    # 引入手寫字體 & 紋理 CSS
+    # 引入手寫字體
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Long+Cang&display=swap');
-    
-    /* 牛皮紙紋理 (如果網路圖掛了會顯示底色) */
-    .kraft-texture {
-        background-image: url("https://www.transparenttextures.com/patterns/cardboard.png");
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,8 +75,8 @@ def show_quest_board(quest_types):
                             # --- 視覺邏輯 ---
                             q_type = row.get('Type', '其他')
                             
-                            # 配色方案
-                            bg_color = "#E6D2B5" # 預設深牛皮
+                            # 配色
+                            bg_color = "#E6D2B5" # 深牛皮
                             text_color = "#3E2723"
                             
                             if q_type == "工作":
@@ -94,69 +89,67 @@ def show_quest_board(quest_types):
                                 bg_color = "#C8E6C9" # 淡綠
                                 text_color = "#1B5E20"
                             
-                            # 旋轉角度 (隨機感)
                             rot = (i % 5 - 2) * 1.5
                             
-                            # 構建 HTML 字串 (注意：這裡把字串接起來，避免縮排錯誤)
-                            card_style = f"""
-                                background-color: {bg_color};
-                                color: {text_color};
-                                padding: 20px;
-                                margin: 10px 0;
-                                border-radius: 2px;
-                                box-shadow: 4px 4px 10px rgba(0,0,0,0.2);
-                                position: relative;
-                                min-height: 260px;
-                                transform: rotate({rot}deg);
-                                background-image: url('https://www.transparenttextures.com/patterns/cardboard.png');
-                            """
+                            # [關鍵修正] 將 CSS 壓縮成單行字串，移除註解，確保 HTML 不會壞掉
+                            card_css = (
+                                f"background-color: {bg_color}; color: {text_color}; "
+                                "padding: 20px; margin: 10px 0; border-radius: 2px; "
+                                "box-shadow: 4px 4px 10px rgba(0,0,0,0.2); position: relative; "
+                                "border-top: 1px solid rgba(255,255,255,0.4); min-height: 260px; "
+                                f"transform: rotate({rot}deg); "
+                                "background-image: url('https://www.transparenttextures.com/patterns/cardboard.png');"
+                            )
                             
-                            # 圓形印章樣式
-                            stamp_style = f"""
-                                position: absolute;
-                                bottom: 15px;
-                                right: 15px;
-                                width: 60px;
-                                height: 60px;
-                                border: 3px double {text_color};
-                                border-radius: 50%;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                                font-family: 'Long Cang', cursive;
-                                font-size: 20px;
-                                font-weight: bold;
-                                transform: rotate(-15deg);
-                                opacity: 0.7;
-                                mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png'); /* 舊舊的感覺 */
-                            """
+                            pin_css = (
+                                "position: absolute; top: -15px; left: 50%; "
+                                "transform: translateX(-50%); font-size: 30px; "
+                                "text-shadow: 2px 2px 2px rgba(0,0,0,0.3);"
+                            )
+                            
+                            title_css = (
+                                "font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; "
+                                f"border-bottom: 2px dashed {text_color}; padding-bottom: 8px; "
+                                "margin-bottom: 12px; text-align: center;"
+                            )
+                            
+                            content_css = (
+                                "font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; "
+                                "margin-bottom: 20px;"
+                            )
+                            
+                            meta_css = (
+                                "font-size: 13px; opacity: 0.8; margin-top: auto; "
+                                "font-family: sans-serif; line-height: 1.6;"
+                            )
+                            
+                            stamp_css = (
+                                "position: absolute; bottom: 15px; right: 15px; "
+                                "width: 60px; height: 60px; "
+                                f"border: 3px double {text_color}; border-radius: 50%; "
+                                "display: flex; align-items: center; justify-content: center; "
+                                "font-family: 'Long Cang', cursive; font-size: 20px; font-weight: bold; "
+                                "transform: rotate(-15deg); opacity: 0.7; "
+                                "mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png');"
+                            )
 
+                            # 構建 HTML (乾淨版)
                             html_code = f"""
-                            <div style="{card_style}">
-                                <div style="position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 30px; text-shadow: 2px 2px 2px rgba(0,0,0,0.3);">📌</div>
-                                
-                                <div style="font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 8px; margin-bottom: 12px; text-align: center;">
-                                    {row['Name']}
-                                </div>
-                                
-                                <div style="font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; margin-bottom: 20px;">
-                                    {row['Content']}
-                                </div>
-                                
-                                <div style="font-size: 13px; opacity: 0.8; margin-top: auto; font-family: sans-serif; line-height: 1.6;">
+                            <div style="{card_css}">
+                                <div style="{pin_css}">📌</div>
+                                <div style="{title_css}">{row['Name']}</div>
+                                <div style="{content_css}">{row['Content']}</div>
+                                <div style="{meta_css}">
                                     📅 期限: {row['Deadline']}<br>
                                     🎁 獎勵: {row['Reward']}
                                 </div>
-                                
-                                <div style="{stamp_style}">
-                                    {q_type}
-                                </div>
+                                <div style="{stamp_css}">{q_type}</div>
                             </div>
                             """
                             
                             st.markdown(html_code, unsafe_allow_html=True)
                             
-                            # 按鈕區
+                            # 按鈕
                             c1, c2 = st.columns(2)
                             with c1:
                                 if st.button(f"🖐️ 接取", key=f"take_{index}"):
@@ -191,7 +184,6 @@ def show_tracking():
                         with st.container():
                             c1, c2 = st.columns([3, 1])
                             with c1:
-                                # 這裡也可以加個小徽章
                                 badge_color = "#eee"
                                 if q_type == "工作": badge_color = "#fff9c4"
                                 elif q_type == "禪行": badge_color = "#e1bee7"
@@ -216,5 +208,5 @@ def show_tracking():
                                     load_sheet_data.clear()
                                     st.rerun()
                             st.divider()
-                else: st.info("目前沒有進行中的任務。")
+                else: st.info("沒有進行中的任務。")
     except: pass
