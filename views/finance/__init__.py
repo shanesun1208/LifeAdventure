@@ -12,7 +12,6 @@ from utils import get_worksheet, load_all_finance_data
 
 from . import dashboard, ledger, assets, budget
 
-# 修改點：增加接收 pay_methods
 def show_finance_page(current_city, current_goal, type1_list, type2_list, income_types, fixed_types, pay_methods):
     st.title("💰 商會 (Merchant Guild)")
     
@@ -54,35 +53,37 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list, income
         inc_month['Amount'] = pd.to_numeric(inc_month['Amount'], errors='coerce').fillna(0)
         total_income = int(inc_month['Amount'].sum())
 
-    # B. 固定開銷 (攤提計算邏輯)
-    total_fixed_monthly = 0
+    # B. 固定開銷 (計畫總額)
+    total_fixed_plan = 0
     if not df_fixed.empty and 'Amount' in df_fixed.columns:
-        # 新增邏輯：判斷週期，攤提金額
         for _, row in df_fixed.iterrows():
             try:
                 amt = float(row['Amount'])
-                cycle = str(row.get('Cycle', '每月')) # 預設每月
-                
-                if cycle == "每年":
-                    total_fixed_monthly += amt / 12
-                elif cycle == "每半年":
-                    total_fixed_monthly += amt / 6
-                else: # 每月
-                    total_fixed_monthly += amt
+                cycle = str(row.get('Cycle', '每月'))
+                if cycle == "每年": total_fixed_plan += amt / 12
+                elif cycle == "每半年": total_fixed_plan += amt / 6
+                else: total_fixed_plan += amt
             except: pass
-        total_fixed_monthly = int(total_fixed_monthly)
+        total_fixed_plan = int(total_fixed_plan)
 
-    # C. 變動支出
-    total_variable = 0
+    # C. 實際變動支出 (含已入帳的固定開銷)
+    total_actual_spent = 0
+    actual_fixed_spent = 0 # 已經入帳的固定開銷金額
     spent_by_category = {}
+    
     if not df_fin.empty and 'Date' in df_fin.columns:
         calc_df = df_fin.copy()
         calc_df['Date'] = calc_df['Date'].astype(str)
         fin_month = calc_df[calc_df['Date'].str.contains(current_month_str)]
         fin_month['Price'] = pd.to_numeric(fin_month['Price'], errors='coerce').fillna(0)
-        total_variable = int(fin_month['Price'].sum())
+        total_actual_spent = int(fin_month['Price'].sum())
+        
         if 'Type1' in fin_month.columns:
             spent_by_category = fin_month.groupby('Type1')['Price'].sum().to_dict()
+            # 假設 Type1 是 "固定開銷" 或 "訂閱" 等，視為已支付的固定開銷
+            # 這裡我們用一個簡單邏輯：只要 Type1 在 fixed_types 裡，就算固定
+            # 或者更簡單，我們之後入帳時統一用 "固定開銷" 當 Type1
+            actual_fixed_spent = spent_by_category.get("固定開銷", 0)
 
     # D. 預算資料
     reserve_goal = 0
@@ -98,7 +99,7 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list, income
             existing_items.append(item)
             if "預備金" in item: reserve_goal = amt
 
-    # E. 預備金
+    # E. 預備金金庫
     curr_res_bal = 0
     if not df_reserve.empty and 'Amount' in df_reserve.columns:
         calc_df = df_reserve.copy()
@@ -107,18 +108,24 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list, income
         wit = calc_df[calc_df['Type']=='取出']['Amount'].sum()
         curr_res_bal = int(dep - wit)
 
-    # F. 自由現金
-    free_cash = total_income - total_fixed_monthly - total_variable - reserve_goal
+    # F. 自由現金流計算 (修正版邏輯)
+    # 邏輯：收入 - 實際總支出 - (還沒入帳的固定開銷) - 預備金目標
+    # 還沒入帳的固定開銷 = 計劃總額 - 實際已入帳(Type1=固定開銷)
+    remaining_unpaid_fixed = max(0, total_fixed_plan - actual_fixed_spent)
+    
+    free_cash = total_income - total_actual_spent - remaining_unpaid_fixed - reserve_goal
 
-    # --- 顯示 ---
+    # --- 3. 介面導航 ---
     nav_options = ["📊 總覽", "💰 收入", "📝 支出", "🏛️ 固定", "📅 預算", "🏦 預備金"]
     if "fin_nav" not in st.session_state: st.session_state["fin_nav"] = "📊 總覽"
     selected_tab = st.radio("商會分頁", nav_options, key="fin_nav", label_visibility="collapsed", horizontal=True)
     st.divider()
 
+    # --- 4. 顯示模組 ---
     if selected_tab == "📊 總覽":
-        # 傳入攤提後的 total_fixed_monthly
-        dashboard.show_dashboard(current_month_str, total_income, total_fixed_monthly, total_variable, free_cash, curr_res_bal, reserve_goal, budget_dict, spent_by_category, df_reserve)
+        # 傳入修正後的數據
+        dashboard.show_dashboard(current_month_str, total_income, total_fixed_plan, total_actual_spent, free_cash, curr_res_bal, reserve_goal, budget_dict, spent_by_category, df_reserve, remaining_unpaid_fixed)
+        
         if st.button("🔄 強制同步雲端資料"):
             for key in ['df_fin', 'df_fixed', 'df_income', 'df_budget', 'df_reserve', 'fin_data_loaded']:
                 if key in st.session_state: del st.session_state[key]
@@ -132,8 +139,8 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list, income
         ledger.show_expense_tab(sheet_fin, df_fin, type1_list, type2_list)
         
     elif selected_tab == "🏛️ 固定":
-        # 傳遞 pay_methods
-        assets.show_fixed_tab(sheet_fixed, df_fixed, total_fixed_monthly, fixed_types, pay_methods)
+        # 修改點：多傳了 sheet_fin 和 df_fin (為了寫入記帳)
+        assets.show_fixed_tab(sheet_fixed, df_fixed, total_fixed_plan, fixed_types, pay_methods, sheet_fin, df_fin)
         
     elif selected_tab == "📅 預算":
         budget.show_budget_tab(sheet_budget, df_budget, type1_list, existing_items, budget_dict)

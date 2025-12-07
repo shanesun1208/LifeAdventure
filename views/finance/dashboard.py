@@ -1,15 +1,25 @@
 import streamlit as st
 import pandas as pd
 
-def show_dashboard(current_month_str, total_income, total_fixed, total_variable, free_cash, current_reserve_balance, reserve_goal, budget_dict, spent_by_category, df_reserve):
+def show_dashboard(current_month_str, total_income, total_fixed_plan, total_actual_spent, free_cash, current_reserve_balance, reserve_goal, budget_dict, spent_by_category, df_reserve, remaining_unpaid_fixed):
     st.subheader(f"📊 {current_month_str} 商會戰略看板")
     
     # 核心指標
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("本月收入", f"${total_income:,}")
-    c2.metric("固定開銷", f"${total_fixed:,}")
-    c3.metric("實際支出", f"${total_variable:,}")
-    c4.metric("自由現金流", f"${free_cash:,}", delta="扣除預算目標後")
+    # 這裡顯示計畫總額
+    c2.metric("固定開銷 (計畫)", f"${total_fixed_plan:,}")
+    # 實際支出
+    c3.metric("實際總支出", f"${total_actual_spent:,}")
+    
+    # 自由現金流 (考慮未付固定開銷)
+    c4.metric("可支配餘額", f"${free_cash:,}", delta="扣除預算與未付固定")
+
+    # 提醒未付固定開銷
+    if remaining_unpaid_fixed > 0:
+        st.warning(f"⚠️ 尚有 **${remaining_unpaid_fixed:,}** 的固定開銷尚未入帳！請至「固定開銷」分頁處理。")
+    else:
+        st.success("✅ 本月固定開銷已全數入帳。")
 
     st.divider()
     col_res, col_space = st.columns([1, 2])
