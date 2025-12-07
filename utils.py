@@ -215,56 +215,41 @@ def save_chat_log(role, message):
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sheet.append_row([time_str, role, message])
 
-# --- [關鍵修改] 每日女僕圖 (自動校正 + 隨機) ---
+# --- [關鍵修改] 每日女僕圖 (路徑直讀版) ---
 @st.cache_data(ttl=3600)
 def get_daily_maid_image():
-    # 1. 預設備援圖 (如果所有本地圖片都讀失敗時顯示)
+    # 預設圖 (網路圖)
     default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
     
     try:
-        # 2. 取得設定紀錄
+        # 1. 取得設定
         settings = get_settings()
         saved_img_record = settings.get('Daily_Maid_Img', "")
         last_date = settings.get('Daily_Maid_Date', "2000-01-01")
         
-        # 3. 鎖定本地資料夾路徑 (相對於 utils.py 的位置)
+        # 2. 鎖定資料夾 (絕對路徑)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         folder_path = os.path.join(current_dir, "assets", "maid")
         
-        # 4. 檢查資料夾是否存在
+        # 3. 檢查資料夾
         if not os.path.exists(folder_path):
-            print(f"Warning: Folder not found: {folder_path}")
             return default_url
             
-        # 5. 現場點名：抓取所有確實存在的圖片
+        # 4. 抓取存在的圖片
         files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        
-        if not files:
-            print("Warning: No images in assets/maid folder")
-            return default_url
+        if not files: return default_url
 
-        # 6. 決定今天要顯示哪張圖 (核心邏輯)
+        # 5. 決定圖片
         today_str = datetime.now().strftime("%Y-%m-%d")
         target_file = saved_img_record
 
-        # 邏輯判斷：
-        # 如果「已經過了一天」 或者 「記錄中的那張圖在資料夾裡找不到(被刪了)」
-        # -> 就從現有的檔案中重新隨機挑一張
+        # 如果日期換了 或 紀錄的圖不在了 -> 隨機挑一張
         if last_date != today_str or saved_img_record not in files:
             target_file = random.choice(files)
-            # 這裡我們不強制回寫到 Sheet，避免頻繁寫入，
-            # 只要在記憶體中保持「今天對這個使用者顯示這張圖」即可。
             
-        # 7. 讀取並轉碼 Base64
-        file_path = os.path.join(folder_path, target_file)
-        
-        with open(file_path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
-        
-        ext = target_file.split('.')[-1].lower()
-        mime_type = "image/jpeg" if ext in ['jpg', 'jpeg'] else "image/png"
-        
-        return f"data:{mime_type};base64,{encoded_string}"
+        # 6. 回傳絕對路徑
+        full_path = os.path.join(folder_path, target_file)
+        return full_path
         
     except Exception as e:
         print(f"Image load error: {e}")
