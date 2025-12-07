@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import sys
 import os
 
-# 路徑修正
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
@@ -12,16 +11,14 @@ sys.path.append(parent_dir)
 from utils import get_worksheet, generate_reward, update_setting_value, load_sheet_data
 
 def show_quest_board(quest_types):
-    # 引入手寫字體 & 牛皮紙質感 CSS
+    # 引入手寫字體 & 紋理 CSS
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Long+Cang&display=swap');
     
-    /* 牛皮紙紋理效果 */
+    /* 牛皮紙紋理 (如果網路圖掛了會顯示底色) */
     .kraft-texture {
-        background-color: #f0e6d2;
         background-image: url("https://www.transparenttextures.com/patterns/cardboard.png");
-        /* 如果網路圖片跑不出來，會顯示底色 */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -29,12 +26,10 @@ def show_quest_board(quest_types):
     st.markdown('<div class="corkboard-title">🛡️ 任務看板 (Quest Board)</div>', unsafe_allow_html=True)
     sheet_qb = get_worksheet("QuestBoard")
     
-    # --- 發布區 (動態新增類型) ---
+    # --- 發布區 ---
     with st.expander("➕ 張貼新委託 (Post Quest)", expanded=False):
-        
         q_name = st.text_input("任務名稱")
         
-        # 動態類型選單
         ADD_NEW = "➕ 新增類型..."
         q_opts = quest_types + [ADD_NEW]
         sel_type = st.selectbox("任務類型 (決定紙張顏色)", q_opts)
@@ -54,24 +49,18 @@ def show_quest_board(quest_types):
             if sheet_qb:
                 with st.spinner("AI 評估中..."):
                     deadline = "無" if no_dead else str(q_dead)
-                    
                     final_type = new_type if sel_type == ADD_NEW and new_type else sel_type
                     if final_type == ADD_NEW: final_type = "其他"
 
                     rew = generate_reward(q_name, q_content, final_type)
-                    
-                    # 寫入資料
                     sheet_qb.append_row([q_name, q_content, final_type, "待接取", deadline, rew])
                     
-                    # 更新 Setting
                     if sel_type == ADD_NEW and new_type and new_type not in quest_types:
                         new_list_str = ",".join(quest_types + [new_type])
                         update_setting_value("Quest_Types", new_list_str)
                         st.toast(f"已新增類型：{new_type}")
 
                     st.success(f"已發布！獎勵：{rew}")
-                    
-                    # [關鍵修正] 清除快取，讓下次讀取能抓到新任務
                     load_sheet_data.clear()
                     st.rerun()
             else: st.error("QuestBoard 讀取失敗")
@@ -79,7 +68,6 @@ def show_quest_board(quest_types):
     # --- 讀取並顯示 ---
     try:
         df_qb = load_sheet_data("QuestBoard")
-        
         if not df_qb.empty:
             if "Status" in df_qb.columns and "Type" in df_qb.columns:
                 todo_tasks = df_qb[df_qb['Status'] == '待接取']
@@ -92,86 +80,96 @@ def show_quest_board(quest_types):
                             # --- 視覺邏輯 ---
                             q_type = row.get('Type', '其他')
                             
-                            # 預設：深色牛皮紙
-                            bg_color = "#dcbfa6" 
+                            # 配色方案
+                            bg_color = "#E6D2B5" # 預設深牛皮
                             text_color = "#3E2723"
                             
                             if q_type == "工作":
-                                bg_color = "#fff59d" # 亮黃色便利貼
-                                text_color = "#212121"
+                                bg_color = "#FFF9C4" # 淡黃
+                                text_color = "#333333"
                             elif q_type == "禪行":
-                                bg_color = "#e1bee7" # 淡紫色
-                                text_color = "#4a148c"
+                                bg_color = "#E1BEE7" # 淡紫
+                                text_color = "#4A148C"
                             elif q_type == "採購":
-                                bg_color = "#b2dfdb" # 淡綠色
-                                text_color = "#004d40"
+                                bg_color = "#C8E6C9" # 淡綠
+                                text_color = "#1B5E20"
                             
-                            # CSS 樣式組合
-                            font_style = "font-family: 'Long Cang', cursive;"
+                            # 旋轉角度 (隨機感)
+                            rot = (i % 5 - 2) * 1.5
                             
-                            # [修正] 這裡使用 f-string 時要小心，不要斷行斷在奇怪的地方
-                            card_html = f"""
-                            <div style="
+                            # 構建 HTML 字串 (注意：這裡把字串接起來，避免縮排錯誤)
+                            card_style = f"""
                                 background-color: {bg_color};
                                 color: {text_color};
                                 padding: 20px;
                                 margin: 10px 0;
                                 border-radius: 2px;
-                                box-shadow: 5px 5px 10px rgba(0,0,0,0.3);
+                                box-shadow: 4px 4px 10px rgba(0,0,0,0.2);
                                 position: relative;
-                                border-top: 1px solid rgba(255,255,255,0.4);
-                                border-bottom: 1px solid rgba(0,0,0,0.1);
-                                min-height: 250px;
-                                transform: rotate({(i%5 - 2)}deg);
+                                min-height: 260px;
+                                transform: rotate({rot}deg);
                                 background-image: url('https://www.transparenttextures.com/patterns/cardboard.png');
-                            ">
-                                <div style="
-                                    position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
-                                    font-size: 28px; text-shadow: 2px 2px 2px rgba(0,0,0,0.3);
-                                ">📌</div>
+                            """
+                            
+                            # 圓形印章樣式
+                            stamp_style = f"""
+                                position: absolute;
+                                bottom: 15px;
+                                right: 15px;
+                                width: 60px;
+                                height: 60px;
+                                border: 3px double {text_color};
+                                border-radius: 50%;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                font-family: 'Long Cang', cursive;
+                                font-size: 20px;
+                                font-weight: bold;
+                                transform: rotate(-15deg);
+                                opacity: 0.7;
+                                mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png'); /* 舊舊的感覺 */
+                            """
+
+                            html_code = f"""
+                            <div style="{card_style}">
+                                <div style="position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 30px; text-shadow: 2px 2px 2px rgba(0,0,0,0.3);">📌</div>
                                 
-                                <div style="{font_style} font-size: 26px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 5px; margin-bottom: 10px;">
+                                <div style="font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 8px; margin-bottom: 12px; text-align: center;">
                                     {row['Name']}
                                 </div>
                                 
-                                <div style="{font_style} font-size: 22px; line-height: 1.4; margin-bottom: 20px;">
+                                <div style="font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; margin-bottom: 20px;">
                                     {row['Content']}
                                 </div>
                                 
-                                <div style="font-size: 14px; opacity: 0.8; margin-top: auto; font-family: sans-serif;">
-                                    📅 {row['Deadline']}<br>
-                                    💰 {row['Reward']}
+                                <div style="font-size: 13px; opacity: 0.8; margin-top: auto; font-family: sans-serif; line-height: 1.6;">
+                                    📅 期限: {row['Deadline']}<br>
+                                    🎁 獎勵: {row['Reward']}
                                 </div>
                                 
-                                <div style="
-                                    position: absolute; bottom: 10px; right: 10px;
-                                    font-size: 14px; font-weight: bold;
-                                    border: 2px solid {text_color};
-                                    padding: 2px 8px; border-radius: 5px;
-                                    transform: rotate(-10deg); opacity: 0.6;
-                                    font-family: sans-serif;
-                                ">
+                                <div style="{stamp_style}">
                                     {q_type}
                                 </div>
                             </div>
                             """
-                            st.markdown(card_html, unsafe_allow_html=True)
+                            
+                            st.markdown(html_code, unsafe_allow_html=True)
                             
                             # 按鈕區
-                            c_take, c_cancel = st.columns(2)
-                            with c_take:
+                            c1, c2 = st.columns(2)
+                            with c1:
                                 if st.button(f"🖐️ 接取", key=f"take_{index}"):
                                     sheet_qb.update_cell(index + 2, 4, "進行中")
                                     st.balloons()
-                                    st.success(f"已接取：{row['Name']}！")
-                                    load_sheet_data.clear() # [關鍵] 清除快取
+                                    st.success(f"已接取：{row['Name']}")
+                                    load_sheet_data.clear()
                                     st.rerun()
-                            
-                            with c_cancel:
+                            with c2:
                                 if st.button(f"❌ 撤下", key=f"del_{index}"):
                                     sheet_qb.delete_rows(index + 2)
                                     st.toast("委託已撕毀。")
-                                    load_sheet_data.clear() # [關鍵] 清除快取
+                                    load_sheet_data.clear()
                                     st.rerun()
                 else:
                     st.info("佈告欄目前空空如也。")
@@ -189,11 +187,21 @@ def show_tracking():
                 doing = df_qb[df_qb['Status'] == '進行中']
                 if not doing.empty:
                     for idx, row in doing.iterrows():
+                        q_type = row.get('Type', '其他')
                         with st.container():
                             c1, c2 = st.columns([3, 1])
                             with c1:
-                                q_type = row.get('Type', '其他')
-                                st.markdown(f"### {row['Name']} <span style='background:#ddd;padding:2px 5px;font-size:14px;border-radius:4px;'>{q_type}</span>", unsafe_allow_html=True)
+                                # 這裡也可以加個小徽章
+                                badge_color = "#eee"
+                                if q_type == "工作": badge_color = "#fff9c4"
+                                elif q_type == "禪行": badge_color = "#e1bee7"
+                                
+                                st.markdown(f"""
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <h3 style="margin:0;">{row['Name']}</h3>
+                                    <span style='background:{badge_color}; padding:4px 8px; font-size:14px; border-radius:12px; border:1px solid #ccc;'>{q_type}</span>
+                                </div>
+                                """, unsafe_allow_html=True)
                                 st.write(f"**內容**: {row['Content']}")
                                 st.write(f"**獎勵**: {row['Reward']} | **期限**: {row['Deadline']}")
                             with c2:
@@ -208,5 +216,5 @@ def show_tracking():
                                     load_sheet_data.clear()
                                     st.rerun()
                             st.divider()
-                else: st.info("沒有進行中的任務。")
+                else: st.info("目前沒有進行中的任務。")
     except: pass
