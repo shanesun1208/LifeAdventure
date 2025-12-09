@@ -118,4 +118,163 @@ def get_settings():
             'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
             'Quest_Types': "工作,採購,禪行,其他",
             'Payment_Methods': "現金,信用卡",
-            'Ma
+            'Maid_Image_URL': "https://cdn-icons-png.flaticon.com/512/4140/4140047.png",
+            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
+            'Loading_Update_Date': "2000-01-01",
+            'Daily_Maid_Img': "", 
+            'Daily_Maid_Date': "2000-01-01"
+        }
+        for k, v in defaults.items():
+            if k not in settings: settings[k] = v
+        return settings
+    except: return {}
+
+def update_setting_value(key, val):
+    sheet = get_worksheet("Setting")
+    if sheet:
+        try:
+            cell = sheet.find(key)
+            sheet.update_cell(cell.row, 2, val)
+        except:
+            sheet.append_row([key, val])
+        get_settings.clear()
+        return True
+    return False
+
+# --- 功能函式 ---
+@st.cache_data(ttl=1800)
+def get_weather(city):
+    if not WEATHER_API_KEY: return "📍 API未設定"
+    try:
+        base_url = "https://api.openweathermap.org/data/2.5/weather"
+        query = f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
+        url = base_url + query
+        res = requests.get(url).json()
+        return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C"
+    except: return f"📍 {city}"
+
+def generate_reward(task_name, content, rank):
+    if not GEMINI_API_KEY: return "公會積分 +10"
+    try:
+        prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
+        return model.generate_content(prompt).text.strip()
+    except: return "神秘的小禮物"
+
+def get_loading_message(current_weather_info=""):
+    settings = get_settings()
+    saved_msgs = settings.get('Loading_Messages', "")
+    last_update = settings.get('Loading_Update_Date', "2000-01-01")
+    need_update = False
+    try:
+        last_date = datetime.strptime(last_update, "%Y-%m-%d")
+        if (datetime.now() - last_date).days >= 7: need_update = True
+    except: need_update = True
+    
+    if need_update and GEMINI_API_KEY:
+        try:
+            weather_desc = current_weather_info.split("|")[-1] if "|" in current_weather_info else "晴天"
+            prompt = (
+                f"請生成 15 句 RPG 風格的「過場讀取文字」。情境：前往商人公會或處理財務。"
+                f"要求：簡短有趣(15字內)、結合天氣({weather_desc})。"
+                f"請用 '|||' 符號將這 15 句隔開，不要有其他多餘文字。"
+            )
+            response = model.generate_content(prompt)
+            new_msgs_str = response.text.strip()
+            if "|||" in new_msgs_str:
+                update_setting_value("Loading_Messages", new_msgs_str)
+                update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
+                saved_msgs = new_msgs_str
+        except Exception as e: print(f"AI error: {e}")
+
+    if saved_msgs:
+        msg_list = [m.strip() for m in saved_msgs.split("|||") if m.strip()]
+        if msg_list: return random.choice(msg_list)
+    return "正在前往商會..."
+
+# --- [關鍵] 小秘書對話大腦 (升級版) ---
+def chat_with_maid(user_input, chat_history, context_info):
+    if not GEMINI_API_KEY: return "主人，API Key 未設定，我無法思考。"
+    
+    if 'model' not in globals() or model is None:
+        return "語言模組未啟動，請檢查設定。"
+
+    history_text = ""
+    for msg in chat_history[-3:]: # 只看最近 3 句，避免 Token 過多
+        role = "主人" if msg['Role'] == 'user' else "秘書"
+        history_text += f"{role}: {msg['Message']}\n"
+    
+    # 升級版 Prompt：強制要求根據數據回答
+    prompt = f"""
+    你是 'Life Adventure OS' 的核心 AI 秘書。
+    你的職責是協助主人管理人生、財務與任務。
+    
+    【當前真實數據】(請基於此回答，不要捏造)
+    {context_info}
+    
+    【近期對話】
+    {history_text}
+    
+    【主人指令】
+    {user_input}
+    
+    【回答準則】
+    1. **數據優先**：如果主人問「我還有多少錢」或「最近做了什麼」，一定要看【當前真實數據】回答。
+    2. **簡潔有力**：回答控制在 80 字以內。
+    3. **誠實原則**：如果數據裡沒有顯示，就誠實說「紀錄中沒有相關資料」。
+    4. **語氣**：保持專業但溫柔的女僕口吻。
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg:
+            return "我需要休息一下 (API限流)...請稍後再試。"
+        return f"發生錯誤: {e}"
+
+def save_chat_log(role, message):
+    sheet = get_worksheet("ChatHistory")
+    if sheet:
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet.append_row([time_str, role, message])
+
+# --- [關鍵] 每日女僕圖 ---
+@st.cache_data(ttl=3600)
+def get_daily_maid_image():
+    # 預設圖
+    default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
+    
+    try:
+        # 1. 取得設定
+        settings = get_settings()
+        saved_img_record = settings.get('Daily_Maid_Img', "")
+        last_date = settings.get('Daily_Maid_Date', "2000-01-01")
+        
+        # 2. 鎖定資料夾 (絕對路徑)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        folder_path = os.path.join(current_dir, "assets", "maid")
+        
+        # 3. 檢查資料夾
+        if not os.path.exists(folder_path):
+            return default_url
+            
+        # 4. 抓取存在的圖片
+        files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if not files: return default_url
+
+        # 5. 決定圖片
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        target_file = saved_img_record
+
+        # 如果日期換了 或 紀錄的圖不在了 -> 隨機挑一張
+        if last_date != today_str or saved_img_record not in files:
+            target_file = random.choice(files)
+            
+        # 6. 回傳絕對路徑
+        full_path = os.path.join(folder_path, target_file)
+        return full_path
+        
+    except Exception as e:
+        print(f"Image load error: {e}")
+        return default_url
