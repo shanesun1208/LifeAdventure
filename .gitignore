@@ -1,3 +1,5 @@
 .streamlit/secrets.toml
 credentials.json
+generate_context.py
+project_context.txt
 **/__pycache__

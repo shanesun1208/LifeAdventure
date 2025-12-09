@@ -11,7 +11,7 @@ sys.path.append(root_dir)
 
 from utils import update_setting_value, load_all_finance_data
 
-# --- 通用編輯器邏輯 (核心修改：移除內建的切片邏輯，完全由外部控制) ---
+# --- 通用編輯器邏輯 ---
 def handle_data_editor(df, sheet, key_prefix, df_session_key):
     """
     df: 已經排序或切片過的 DataFrame
@@ -21,7 +21,6 @@ def handle_data_editor(df, sheet, key_prefix, df_session_key):
         return
 
     # 1. 準備資料
-    # [修正] 不再這裡做 tail(20)，改由外部傳入決定要顯示多少
     df_display = df.copy()
     
     # 處理週數 (如果有 Week 欄位就暫存並隱藏)
@@ -61,7 +60,7 @@ def handle_data_editor(df, sheet, key_prefix, df_session_key):
                     deleted_rows = edited_df[edited_df["刪除"] == True]
                     
                     if not deleted_rows.empty:
-                        # 取得原始 Index (這很重要，因為我們有排序過，Index 是對應原始 Google Sheet 的關鍵)
+                        # 取得原始 Index
                         for idx in deleted_rows.index:
                             rows_to_delete.append(idx + 2) # GSheet Row = Index + 2
                         
@@ -75,8 +74,7 @@ def handle_data_editor(df, sheet, key_prefix, df_session_key):
                     for idx, row in edited_df.iterrows():
                         if row["刪除"]: continue 
                         
-                        # 比對原始資料 (使用 index 查找)
-                        # 注意：這裡要回去找原始 df_display (尚未被編輯器改過的)
+                        # 比對原始資料
                         original_row = df_display.loc[idx]
                         
                         cols = [c for c in edited_df.columns if c != "刪除"]
@@ -126,17 +124,41 @@ def show_income_tab(sheet_income, df_income, income_types):
     with st.expander("➕ 新增收入", expanded=False):
         with st.form("add_income"):
             i_date = st.date_input("日期", datetime.now())
-            i_item = st.text_input("項目", placeholder="ex: 薪資")
+            i_item = st.text_input("項目", placeholder="ex: 6月薪資")
             i_amount = st.number_input("金額", min_value=0, step=1000)
-            i_type = st.selectbox("類別", ["薪資", "獎金", "投資", "其他"])
+            
+            # --- [更新] 動態新增類別邏輯 ---
+            ADD_NEW_INC = "➕ 新增來源..."
+            inc_opts = income_types + [ADD_NEW_INC]
+            
+            sel_type = st.selectbox("類別", inc_opts)
+            
+            new_type = None
+            if sel_type == ADD_NEW_INC:
+                new_type = st.text_input("輸入新來源名稱", placeholder="ex: 股利")
+            # ---------------------------
+
             i_note = st.text_input("備註")
+            
             if st.form_submit_button("📥 存入"):
                 if sheet_income:
-                    row_data = [str(i_date), i_item, i_amount, i_type, i_note]
+                    # 決定寫入的類別
+                    final_type = new_type if sel_type == ADD_NEW_INC and new_type else sel_type
+                    if final_type == ADD_NEW_INC: final_type = "未分類"
+
+                    row_data = [str(i_date), i_item, i_amount, final_type, i_note]
                     sheet_income.append_row(row_data)
+                    
+                    # 更新 Session
                     new_row = pd.DataFrame([row_data], columns=['Date', 'Item', 'Amount', 'Type', 'Note'])
                     if 'df_income' in st.session_state:
                         st.session_state['df_income'] = pd.concat([st.session_state['df_income'], new_row], ignore_index=True)
+                    
+                    # 更新 Setting 設定檔 (如果是新類別)
+                    if sel_type == ADD_NEW_INC and new_type and new_type not in income_types:
+                        update_setting_value("Income_Types", ",".join(income_types + [new_type]))
+                        st.toast(f"已記憶新類別：{new_type}")
+
                     st.success("已存入！")
                     st.rerun()
                 else: st.error("找不到 Income 分頁")
