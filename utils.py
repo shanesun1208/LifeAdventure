@@ -1,280 +1,139 @@
 import streamlit as st
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import os
-import requests
-import google.generativeai as genai
 import pandas as pd
-import concurrent.futures
-import random
-import base64
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
+import sys
+import os
 
-# --- 常數 ---
-SHEET_NAME = "LifeAdventure"
-CITY_OPTIONS = ["Taipei,TW", "New Taipei,TW", "Taichung,TW", "Kaohsiung,TW", "Tokyo,JP", "New York,US", "London,GB"]
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+sys.path.append(parent_dir)
 
-# --- API 初始化 ---
-def init_api():
-    w_key = ""
-    g_key = ""
-    if "general" in st.secrets:
-        w_key = st.secrets["general"]["weather_api_key"]
-        g_key = st.secrets["general"]["gemini_api_key"]
-    return w_key, g_key
+from utils import get_worksheet, load_all_finance_data
 
-WEATHER_API_KEY, GEMINI_API_KEY = init_api()
+from . import dashboard, ledger, assets, budget
 
-# --- API 設定 (包含 429 防護與模型選擇) ---
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+def show_finance_page(current_city, current_goal, type1_list, type2_list, income_types, fixed_types, pay_methods):
+    st.title("💰 商會 (Merchant Guild)")
     
-    # 優先使用免費額度較高的 flash-latest
-    try:
-        model_name = 'gemini-flash-latest'
-        model = genai.GenerativeModel(model_name)
-        print(f"✅ 已設定模型: {model_name}")
-    except Exception as e:
-        print(f"❌ 模型設定失敗: {e}")
-        model = None
-
-# --- Google Sheet 連線 ---
-@st.cache_resource
-def get_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    if os.path.exists("credentials.json"):
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    elif "gcp_service_account" in st.secrets:
-        creds_dict = st.secrets["gcp_service_account"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    else:
-        st.error("找不到憑證！")
-        st.stop()
-    return gspread.authorize(creds)
-
-@st.cache_resource
-def get_spreadsheet():
-    client = get_client()
-    try:
-        return client.open(SHEET_NAME)
-    except Exception as e:
-        st.error(f"無法開啟試算表 '{SHEET_NAME}'：{e}")
-        return None
-
-def get_worksheet(worksheet_name):
-    sh = get_spreadsheet()
-    if sh:
-        try:
-            return sh.worksheet(worksheet_name)
-        except gspread.WorksheetNotFound:
-            return None
-        except Exception as e:
-            print(f"Error fetching {worksheet_name}: {e}")
-            return None
-    return None
-
-# --- 資料讀取 ---
-@st.cache_data(ttl=60)
-def load_sheet_data(worksheet_name):
-    sheet = get_worksheet(worksheet_name)
-    if sheet:
-        return pd.DataFrame(sheet.get_all_records())
-    return pd.DataFrame()
-
-@st.cache_data(ttl=60)
-def load_all_finance_data():
-    sheet_names = ["Finance", "FixedExpenses", "Income", "Budget", "ReserveFund", "QuestBoard", "ChatHistory"]
-    data = {}
+    # --- Loading ---
+    # [修改] 移除 get_loading_message，改用靜態文字
+    if "fin_data_loaded" not in st.session_state:
+        with st.spinner("⏳ 正在核對商會帳本..."):
+            all_data = load_all_finance_data()
+            st.session_state['df_fin'] = all_data.get("Finance", pd.DataFrame())
+            st.session_state['df_fixed'] = all_data.get("FixedExpenses", pd.DataFrame())
+            st.session_state['df_income'] = all_data.get("Income", pd.DataFrame())
+            st.session_state['df_budget'] = all_data.get("Budget", pd.DataFrame())
+            st.session_state['df_reserve'] = all_data.get("ReserveFund", pd.DataFrame())
+            st.session_state['fin_data_loaded'] = True
     
-    def fetch_one(name):
-        sheet = get_worksheet(name)
-        if sheet:
-            return name, pd.DataFrame(sheet.get_all_records())
-        return name, pd.DataFrame()
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
-        results = executor.map(fetch_one, sheet_names)
+    df_fin = st.session_state['df_fin']
+    df_fixed = st.session_state['df_fixed']
+    df_income = st.session_state['df_income']
+    df_budget = st.session_state['df_budget']
+    df_reserve = st.session_state['df_reserve']
     
-    for name, df in results:
-        data[name] = df
+    sheet_fin = get_worksheet("Finance")
+    sheet_fixed = get_worksheet("FixedExpenses")
+    sheet_income = get_worksheet("Income")
+    sheet_budget = get_worksheet("Budget")
+    sheet_reserve = get_worksheet("ReserveFund")
+
+    # --- 數據計算 ---
+    current_month_str = datetime.now().strftime("%Y-%m")
+    
+    # A. 收入
+    total_income = 0
+    if not df_income.empty and 'Date' in df_income.columns:
+        calc_df = df_income.copy()
+        calc_df['Date'] = calc_df['Date'].astype(str)
+        inc_month = calc_df[calc_df['Date'].str.contains(current_month_str)]
+        inc_month['Amount'] = pd.to_numeric(inc_month['Amount'], errors='coerce').fillna(0)
+        total_income = int(inc_month['Amount'].sum())
+
+    # B. 固定開銷 (計畫總額)
+    total_fixed_plan = 0
+    if not df_fixed.empty and 'Amount' in df_fixed.columns:
+        for _, row in df_fixed.iterrows():
+            try:
+                amt = float(row['Amount'])
+                cycle = str(row.get('Cycle', '每月'))
+                if cycle == "每年": total_fixed_plan += amt / 12
+                elif cycle == "每半年": total_fixed_plan += amt / 6
+                else: total_fixed_plan += amt
+            except: pass
+        total_fixed_plan = int(total_fixed_plan)
+
+    # C. 實際變動支出 (含已入帳的固定開銷)
+    total_actual_spent = 0
+    actual_fixed_spent = 0 # 已經入帳的固定開銷金額
+    spent_by_category = {}
+    
+    if not df_fin.empty and 'Date' in df_fin.columns:
+        calc_df = df_fin.copy()
+        calc_df['Date'] = calc_df['Date'].astype(str)
+        fin_month = calc_df[calc_df['Date'].str.contains(current_month_str)]
+        fin_month['Price'] = pd.to_numeric(fin_month['Price'], errors='coerce').fillna(0)
+        total_actual_spent = int(fin_month['Price'].sum())
         
-    return data
+        if 'Type1' in fin_month.columns:
+            spent_by_category = fin_month.groupby('Type1')['Price'].sum().to_dict()
+            actual_fixed_spent = spent_by_category.get("固定開銷", 0)
 
-# --- 設定相關 ---
-@st.cache_data(ttl=300)
-def get_settings():
-    try:
-        sheet = get_worksheet("Setting")
-        if not sheet: return {}
-        records = sheet.get_all_records()
-        settings = {row['Item']: row['Value'] for row in records}
-        defaults = {
-            'LifeGoal': "未設定",
-            'Location': "Taipei,TW",
-            'Type1_Options': "飲食,交通,娛樂,固定開銷,其他",
-            'Type2_Options': "早餐,午餐,晚餐,捷運,計程車,房租",
-            'Income_Types': "薪資,獎金,投資,兼職,其他",
-            'Fixed_Types': "訂閱,房租,保險,分期付款,孝親費,網路費,其他",
-            'Quest_Types': "工作,採購,禪行,其他",
-            'Payment_Methods': "現金,信用卡",
-            'Maid_Image_URL': "https://cdn-icons-png.flaticon.com/512/4140/4140047.png",
-            'Loading_Messages': "前往商會路上...|整理帳本中...|點算庫存貨物...",
-            'Loading_Update_Date': "2000-01-01",
-            'Daily_Maid_Img': "", 
-            'Daily_Maid_Date': "2000-01-01"
-        }
-        for k, v in defaults.items():
-            if k not in settings: settings[k] = v
-        return settings
-    except: return {}
+    # D. 預算資料
+    reserve_goal = 0
+    budget_dict = {}
+    existing_items = []
+    if not df_budget.empty and 'Item' in df_budget.columns:
+        calc_df = df_budget.copy()
+        calc_df['Budget'] = pd.to_numeric(calc_df['Budget'], errors='coerce').fillna(0)
+        for _, row in calc_df.iterrows():
+            item = row['Item']
+            amt = int(row['Budget'])
+            budget_dict[item] = amt
+            existing_items.append(item)
+            if "預備金" in item: reserve_goal = amt
 
-def update_setting_value(key, val):
-    sheet = get_worksheet("Setting")
-    if sheet:
-        try:
-            cell = sheet.find(key)
-            sheet.update_cell(cell.row, 2, val)
-        except:
-            sheet.append_row([key, val])
-        get_settings.clear()
-        return True
-    return False
+    # E. 預備金金庫
+    curr_res_bal = 0
+    if not df_reserve.empty and 'Amount' in df_reserve.columns:
+        calc_df = df_reserve.copy()
+        calc_df['Amount'] = pd.to_numeric(calc_df['Amount'], errors='coerce').fillna(0)
+        dep = calc_df[calc_df['Type']=='存入']['Amount'].sum()
+        wit = calc_df[calc_df['Type']=='取出']['Amount'].sum()
+        curr_res_bal = int(dep - wit)
 
-# --- 功能函式 ---
-@st.cache_data(ttl=1800)
-def get_weather(city):
-    if not WEATHER_API_KEY: return "📍 API未設定"
-    try:
-        base_url = "https://api.openweathermap.org/data/2.5/weather"
-        query = f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=zh_tw"
-        url = base_url + query
-        res = requests.get(url).json()
-        return f"📍 {city} | 🌡️ {res['main']['temp']:.1f}°C"
-    except: return f"📍 {city}"
+    # F. 自由現金流計算
+    remaining_unpaid_fixed = max(0, total_fixed_plan - actual_fixed_spent)
+    free_cash = total_income - total_actual_spent - remaining_unpaid_fixed - reserve_goal
 
-def generate_reward(task_name, content, rank):
-    if not GEMINI_API_KEY: return "公會積分 +10"
-    try:
-        prompt = f"玩家建立任務：{task_name} (內容:{content}, 等級:{rank})。請想一個有趣的「小獎勵」(15字內)。"
-        return model.generate_content(prompt).text.strip()
-    except: return "神秘的小禮物"
+    # --- 3. 介面導航 ---
+    nav_options = ["📊 總覽", "💰 收入", "📝 支出", "🏛️ 固定", "📅 預算", "🏦 預備金"]
+    if "fin_nav" not in st.session_state: st.session_state["fin_nav"] = "📊 總覽"
+    selected_tab = st.radio("商會分頁", nav_options, key="fin_nav", label_visibility="collapsed", horizontal=True)
+    st.divider()
 
-def get_loading_message(current_weather_info=""):
-    settings = get_settings()
-    saved_msgs = settings.get('Loading_Messages', "")
-    last_update = settings.get('Loading_Update_Date', "2000-01-01")
-    need_update = False
-    try:
-        last_date = datetime.strptime(last_update, "%Y-%m-%d")
-        if (datetime.now() - last_date).days >= 7: need_update = True
-    except: need_update = True
-    
-    if need_update and GEMINI_API_KEY:
-        try:
-            weather_desc = current_weather_info.split("|")[-1] if "|" in current_weather_info else "晴天"
-            prompt = (
-                f"請生成 15 句 RPG 風格的「過場讀取文字」。情境：前往商人公會或處理財務。"
-                f"要求：簡短有趣(15字內)、結合天氣({weather_desc})。"
-                f"請用 '|||' 符號將這 15 句隔開，不要有其他多餘文字。"
-            )
-            response = model.generate_content(prompt)
-            new_msgs_str = response.text.strip()
-            if "|||" in new_msgs_str:
-                update_setting_value("Loading_Messages", new_msgs_str)
-                update_setting_value("Loading_Update_Date", datetime.now().strftime("%Y-%m-%d"))
-                saved_msgs = new_msgs_str
-        except Exception as e: print(f"AI error: {e}")
-
-    if saved_msgs:
-        msg_list = [m.strip() for m in saved_msgs.split("|||") if m.strip()]
-        if msg_list: return random.choice(msg_list)
-    return "正在前往商會..."
-
-# --- [關鍵] 小秘書對話大腦 (升級版) ---
-def chat_with_maid(user_input, chat_history, context_info):
-    if not GEMINI_API_KEY: return "主人，API Key 未設定，我無法思考。"
-    
-    if 'model' not in globals() or model is None:
-        return "語言模組未啟動，請檢查設定。"
-
-    history_text = ""
-    for msg in chat_history[-3:]: # 只看最近 3 句，避免 Token 過多
-        role = "主人" if msg['Role'] == 'user' else "秘書"
-        history_text += f"{role}: {msg['Message']}\n"
-    
-    # 升級版 Prompt：強制要求根據數據回答
-    prompt = f"""
-    你是 'Life Adventure OS' 的核心 AI 秘書。
-    你的職責是協助主人管理人生、財務與任務。
-    
-    【當前真實數據】(請基於此回答，不要捏造)
-    {context_info}
-    
-    【近期對話】
-    {history_text}
-    
-    【主人指令】
-    {user_input}
-    
-    【回答準則】
-    1. **數據優先**：如果主人問「我還有多少錢」或「最近做了什麼」，一定要看【當前真實數據】回答。
-    2. **簡潔有力**：回答控制在 80 字以內。
-    3. **誠實原則**：如果數據裡沒有顯示，就誠實說「紀錄中沒有相關資料」。
-    4. **語氣**：保持專業但溫柔的女僕口吻。
-    """
-    
-    try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            return "我需要休息一下 (API限流)...請稍後再試。"
-        return f"發生錯誤: {e}"
-
-def save_chat_log(role, message):
-    sheet = get_worksheet("ChatHistory")
-    if sheet:
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet.append_row([time_str, role, message])
-
-# --- [關鍵] 每日女僕圖 ---
-@st.cache_data(ttl=3600)
-def get_daily_maid_image():
-    # 預設圖
-    default_url = "https://cdn-icons-png.flaticon.com/512/4140/4140047.png"
-    
-    try:
-        # 1. 取得設定
-        settings = get_settings()
-        saved_img_record = settings.get('Daily_Maid_Img', "")
-        last_date = settings.get('Daily_Maid_Date', "2000-01-01")
+    # --- 4. 顯示模組 ---
+    if selected_tab == "📊 總覽":
+        dashboard.show_dashboard(current_month_str, total_income, total_fixed_plan, total_actual_spent, free_cash, curr_res_bal, reserve_goal, budget_dict, spent_by_category, df_reserve, remaining_unpaid_fixed)
         
-        # 2. 鎖定資料夾 (絕對路徑)
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        folder_path = os.path.join(current_dir, "assets", "maid")
+        if st.button("🔄 強制同步雲端資料"):
+            for key in ['df_fin', 'df_fixed', 'df_income', 'df_budget', 'df_reserve', 'fin_data_loaded']:
+                if key in st.session_state: del st.session_state[key]
+            load_all_finance_data.clear()
+            st.rerun()
+    
+    elif selected_tab == "💰 收入":
+        ledger.show_income_tab(sheet_income, df_income, income_types)
         
-        # 3. 檢查資料夾
-        if not os.path.exists(folder_path):
-            return default_url
-            
-        # 4. 抓取存在的圖片
-        files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        if not files: return default_url
-
-        # 5. 決定圖片
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        target_file = saved_img_record
-
-        # 如果日期換了 或 紀錄的圖不在了 -> 隨機挑一張
-        if last_date != today_str or saved_img_record not in files:
-            target_file = random.choice(files)
-            
-        # 6. 回傳絕對路徑
-        full_path = os.path.join(folder_path, target_file)
-        return full_path
+    elif selected_tab == "📝 支出":
+        ledger.show_expense_tab(sheet_fin, df_fin, type1_list, type2_list)
         
-    except Exception as e:
-        print(f"Image load error: {e}")
-        return default_url
+    elif selected_tab == "🏛️ 固定":
+        assets.show_fixed_tab(sheet_fixed, df_fixed, total_fixed_plan, fixed_types, pay_methods, sheet_fin, df_fin)
+        
+    elif selected_tab == "📅 預算":
+        budget.show_budget_tab(sheet_budget, df_budget, type1_list, existing_items, budget_dict)
+        
+    elif selected_tab == "🏦 預備金":
+        assets.show_reserve_tab(sheet_reserve, df_reserve, curr_res_bal)
