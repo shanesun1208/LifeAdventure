@@ -9,15 +9,19 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from utils import get_worksheet, generate_reward, update_setting_value, load_sheet_data
+# [修改 1] 移除 generate_reward 的引用
+from utils import get_worksheet, update_setting_value, load_sheet_data
 
 def show_quest_board(quest_types):
-    # 引入手寫字體 & 紋理 CSS
+    # [修改 2] 移除 Google Fonts 的 Long Cang，改用 CSS 定義系統楷體
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Long+Cang&display=swap');
+    /* 定義楷體優先，若無則使用明體 */
+    .kaiti-font {
+        font-family: 'KaiTi', 'DFKai-SB', 'BiauKai', '楷體', '標楷體', serif;
+    }
     
-    /* 牛皮紙紋理 (如果網路圖掛了會顯示底色) */
+    /* 牛皮紙紋理 */
     .kraft-texture {
         background-image: url("https://www.transparenttextures.com/patterns/cardboard.png");
     }
@@ -45,16 +49,20 @@ def show_quest_board(quest_types):
         with c3:
             q_dead = st.date_input("期限", datetime.now() + timedelta(days=7))
             no_dead = st.checkbox("無期限")
-        with c4: st.info("🎁 獎勵由 AI 生成...")
+        with c4: 
+            # [修改 3] 移除 AI 獎勵生成的提示，改為固定文字或隱藏
+            st.caption("📝 獎勵系統暫時關閉，專注於任務本身。")
         
         if st.button("📌 釘上佈告欄"):
             if sheet_qb:
-                with st.spinner("AI 評估中..."):
+                with st.spinner("張貼中..."):
                     deadline = "無" if no_dead else str(q_dead)
                     final_type = new_type if sel_type == ADD_NEW and new_type else sel_type
                     if final_type == ADD_NEW: final_type = "其他"
 
-                    rew = generate_reward(q_name, q_content, final_type)
+                    # [修改 4] 不再生成獎勵，寫入固定值 "無" 以維持資料庫格式
+                    rew = "無"
+                    
                     sheet_qb.append_row([q_name, q_content, final_type, "待接取", deadline, rew])
                     
                     if sel_type == ADD_NEW and new_type and new_type not in quest_types:
@@ -62,7 +70,7 @@ def show_quest_board(quest_types):
                         update_setting_value("Quest_Types", new_list_str)
                         st.toast(f"已新增類型：{new_type}")
 
-                    st.success(f"已發布！獎勵：{rew}")
+                    st.success(f"已發布任務：{q_name}")
                     load_sheet_data.clear()
                     st.rerun()
             else: st.error("QuestBoard 讀取失敗")
@@ -75,10 +83,9 @@ def show_quest_board(quest_types):
                 todo_tasks = df_qb[df_qb['Status'] == '待接取']
                 
                 if not todo_tasks.empty:
-                    # [修改點] 改成 4 欄，讓紙條變窄
                     cols = st.columns(4)
                     for i, (index, row) in enumerate(todo_tasks.iterrows()):
-                        col = cols[i % 4] # [修改點] 配合欄數取餘數
+                        col = cols[i % 4]
                         with col:
                             # --- 視覺邏輯 ---
                             q_type = row.get('Type', '其他')
@@ -105,15 +112,17 @@ def show_quest_board(quest_types):
                             
                             pin_css = "position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 30px; text-shadow: 2px 2px 2px rgba(0,0,0,0.3);"
                             
-                            title_css = f"font-family: 'Long Cang', cursive; font-size: 28px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 8px; margin-bottom: 12px; text-align: center;"
+                            # [修改 5] 字體改為楷體 (kaiti-font)
+                            title_css = f"font-family: 'KaiTi', 'DFKai-SB', '楷體', serif; font-size: 28px; font-weight: bold; border-bottom: 2px dashed {text_color}; padding-bottom: 8px; margin-bottom: 12px; text-align: center;"
                             
-                            content_css = "font-family: 'Long Cang', cursive; font-size: 22px; line-height: 1.5; margin-bottom: 20px;"
+                            content_css = "font-family: 'KaiTi', 'DFKai-SB', '楷體', serif; font-size: 22px; line-height: 1.5; margin-bottom: 20px;"
                             
                             meta_css = "font-size: 13px; opacity: 0.8; margin-top: auto; font-family: sans-serif; line-height: 1.6;"
                             
-                            stamp_css = f"position: absolute; bottom: 15px; right: 15px; width: 60px; height: 60px; border: 3px double {text_color}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Long Cang', cursive; font-size: 20px; font-weight: bold; transform: rotate(-15deg); opacity: 0.7; mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png');"
+                            stamp_css = f"position: absolute; bottom: 15px; right: 15px; width: 60px; height: 60px; border: 3px double {text_color}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'KaiTi', 'DFKai-SB', '楷體', serif; font-size: 20px; font-weight: bold; transform: rotate(-15deg); opacity: 0.7; mask-image: url('https://www.transparenttextures.com/patterns/grunge-wall.png');"
 
                             # 組合 HTML
+                            # [修改 6] 移除獎勵顯示行
                             html_code = f"""
                             <div style="{card_css}">
                                 <div style="{pin_css}">📌</div>
@@ -121,7 +130,6 @@ def show_quest_board(quest_types):
                                 <div style="{content_css}">{row['Content']}</div>
                                 <div style="{meta_css}">
                                     📅 期限: {row['Deadline']}<br>
-                                    🎁 獎勵: {row['Reward']}
                                 </div>
                                 <div style="{stamp_css}">
                                     {q_type}
@@ -178,7 +186,8 @@ def show_tracking():
                                 </div>
                                 """, unsafe_allow_html=True)
                                 st.write(f"**內容**: {row['Content']}")
-                                st.write(f"**獎勵**: {row['Reward']} | **期限**: {row['Deadline']}")
+                                # [修改 7] 追蹤區塊也移除獎勵顯示
+                                st.write(f"**期限**: {row['Deadline']}")
                             with c2:
                                 if st.button("✅ 完成", key=f"done_{idx}"):
                                     sheet_qb.update_cell(idx+2, 4, "已完成")
