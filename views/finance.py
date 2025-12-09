@@ -11,7 +11,8 @@ sys.path.append(parent_dir)
 # 引入 update_setting_value 以便存回新分類
 from utils import get_worksheet, load_sheet_data, update_setting_value
 
-def show_finance_page(current_city, current_goal, type1_list, type2_list):
+# [修改 1] 擴充參數，接收 app.py 傳來的所有列表資料
+def show_finance_page(current_city, current_goal, type1_list, type2_list, income_types_list, fixed_types_list, pay_methods_list):
     st.title("💰 商會 (Merchant Guild)")
     
     # --- 1. 使用快取讀取資料 ---
@@ -119,7 +120,7 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
             if spent > budget_amt:
                 st.caption(f"⚠️ {item} 已超支 ${spent - budget_amt:,} ！")
 
-    # === Tab 2: 收入 ===
+    # === Tab 2: 收入 (修改完成：新增動態類別功能) ===
     with tab2:
         st.subheader("💰 登記收入")
         c1, c2 = st.columns([1, 1.5])
@@ -128,12 +129,38 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
                 i_date = st.date_input("日期", datetime.now())
                 i_item = st.text_input("項目", placeholder="ex: 薪資")
                 i_amount = st.number_input("金額", min_value=0, step=1000)
-                i_type = st.selectbox("類別", ["薪資", "獎金", "投資", "其他"])
+                
+                # [修改 2] 動態新增收入類別邏輯
+                ADD_NEW_INC = "➕ 新增類別..."
+                # 確保 income_types_list 是清單，若為空則給預設值
+                if not income_types_list: income_types_list = ["薪資", "獎金", "投資", "其他"]
+                
+                inc_options = income_types_list + [ADD_NEW_INC]
+                i_type_sel = st.selectbox("類別", inc_options)
+                
+                new_inc_val = None
+                if i_type_sel == ADD_NEW_INC:
+                    new_inc_val = st.text_input("輸入新收入類別名稱", placeholder="ex: 股息")
+                
                 i_note = st.text_input("備註")
+                
                 if st.form_submit_button("📥 存入"):
                     sheet = get_worksheet("Income")
                     if sheet:
-                        sheet.append_row([str(i_date), i_item, i_amount, i_type, i_note])
+                        # 決定最終類別
+                        final_type = new_inc_val if i_type_sel == ADD_NEW_INC and new_inc_val else i_type_sel
+                        if final_type == ADD_NEW_INC: final_type = "其他" # 防呆
+                        
+                        # 1. 寫入 Income 表
+                        sheet.append_row([str(i_date), i_item, i_amount, final_type, i_note])
+                        
+                        # 2. 如果是新類別，更新 Setting 表
+                        if i_type_sel == ADD_NEW_INC and new_inc_val:
+                            if new_inc_val not in income_types_list:
+                                new_list_str = ",".join(income_types_list + [new_inc_val])
+                                update_setting_value("Income_Types", new_list_str)
+                                st.toast(f"已新增收入分類：{new_inc_val}")
+                        
                         st.success("已存入！")
                         st.cache_data.clear()
                         st.rerun()
@@ -141,7 +168,7 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
             if not df_income.empty:
                 st.dataframe(df_income[::-1], use_container_width=True, hide_index=True)
 
-    # === Tab 3: 支出 (重點修改: 動態新增分類) ===
+    # === Tab 3: 支出 (保持原樣，僅需確保變數名稱正確) ===
     with tab3:
         st.subheader("📝 日常記帳")
         c1, c2 = st.columns([1, 1.5])
@@ -152,14 +179,12 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
                 f_price = st.number_input("金額", min_value=0, step=10)
                 
                 # --- 動態分類邏輯 ---
-                # 1. 在選單最後加入「新增選項」
                 ADD_NEW_OPT = "➕ 新增類別..."
                 
                 t1_options = type1_list + [ADD_NEW_OPT]
                 t2_options = type2_list + [ADD_NEW_OPT]
                 
                 sel_t1 = st.selectbox("主分類 (Type1)", t1_options)
-                # 如果選了新增，就顯示輸入框，否則隱藏
                 new_t1_val = None
                 if sel_t1 == ADD_NEW_OPT:
                     new_t1_val = st.text_input("輸入新主分類名稱", placeholder="ex: 娛樂")
@@ -173,11 +198,9 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
                 if st.form_submit_button("💸 記帳"):
                     sheet = get_worksheet("Finance")
                     if sheet:
-                        # 決定最終使用的分類名稱
                         final_t1 = new_t1_val if sel_t1 == ADD_NEW_OPT and new_t1_val else sel_t1
                         final_t2 = new_t2_val if sel_t2 == ADD_NEW_OPT and new_t2_val else sel_t2
                         
-                        # 防呆：如果選了新增但沒打字，就存成"未分類"
                         if final_t1 == ADD_NEW_OPT: final_t1 = "未分類"
                         if final_t2 == ADD_NEW_OPT: final_t2 = "未分類"
 
@@ -185,26 +208,22 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
                         wk = f_date.isocalendar()[1]
                         sheet.append_row([str(f_date), wk, f_item, f_price, final_t1, final_t2])
                         
-                        # 2. 檢查是否需要更新 Setting (Type1)
-                        updated_setting = False
+                        # 2. 更新 Setting (Type1)
                         if sel_t1 == ADD_NEW_OPT and new_t1_val:
                             if new_t1_val not in type1_list:
-                                # 將新項目加入舊列表，並用逗號組合成字串
                                 new_list_str = ",".join(type1_list + [new_t1_val])
                                 update_setting_value("Type1_Options", new_list_str)
-                                updated_setting = True
                                 st.toast(f"已新增主分類：{new_t1_val}")
 
-                        # 3. 檢查是否需要更新 Setting (Type2)
+                        # 3. 更新 Setting (Type2)
                         if sel_t2 == ADD_NEW_OPT and new_t2_val:
                             if new_t2_val not in type2_list:
                                 new_list_str = ",".join(type2_list + [new_t2_val])
                                 update_setting_value("Type2_Options", new_list_str)
-                                updated_setting = True
                                 st.toast(f"已新增子分類：{new_t2_val}")
 
                         st.success(f"已記錄：{f_item} ${f_price}")
-                        st.cache_data.clear() # 清除快取，確保下次選單更新
+                        st.cache_data.clear()
                         st.rerun()
                     else: st.error("找不到 Finance 分頁")
         with c2:
@@ -218,9 +237,10 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
         with col_add:
             with st.form("add_fix"):
                 fx_item = st.text_input("項目")
-                fx_type = st.selectbox("類型", ["訂閱", "房租", "保險", "其他"])
+                # 這裡也可以考慮改成動態，目前先維持固定列表
+                fx_type = st.selectbox("類型", fixed_types_list if fixed_types_list else ["訂閱", "房租", "保險", "其他"])
                 fx_amt = st.number_input("金額", min_value=0)
-                fx_pay = st.text_input("付款方式")
+                fx_pay = st.text_input("付款方式") # 這裡其實也可以用 pay_methods_list
                 fx_day = st.number_input("扣款日", 1, 31)
                 if st.form_submit_button("➕ 新增"):
                     sheet = get_worksheet("FixedExpenses")
@@ -244,7 +264,6 @@ def show_finance_page(current_city, current_goal, type1_list, type2_list):
     # === Tab 5: 預算規劃 ===
     with tab5:
         st.subheader("📅 預算額度設定")
-        # 這裡的 type1_list 此時還是舊的，因為 rerun 才會更新
         all_possible_items = type1_list + ["預備金"]
         items_to_add = [item for item in all_possible_items if item not in existing_budget_items]
         items_to_edit = [item for item in all_possible_items if item in existing_budget_items]
