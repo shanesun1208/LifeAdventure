@@ -66,6 +66,8 @@ def get_spreadsheet():
         return None
 
 
+# [重要修正] 加上快取機制，解決頻繁操作導致的 API 額度超標問題
+@st.cache_resource(ttl=3600)
 def get_worksheet(worksheet_name):
     sh = get_spreadsheet()
     if sh:
@@ -74,8 +76,14 @@ def get_worksheet(worksheet_name):
         except gspread.WorksheetNotFound:
             return None
         except Exception as e:
-            print(f"Error fetching {worksheet_name}: {e}")
-            return None
+            # 如果發生錯誤 (例如連線逾時)，清除 spreadsheet 快取再試一次
+            get_spreadsheet.clear()
+            try:
+                sh = get_spreadsheet()
+                return sh.worksheet(worksheet_name)
+            except:
+                print(f"Error fetching {worksheet_name}: {e}")
+                return None
     return None
 
 
@@ -90,7 +98,6 @@ def load_sheet_data(worksheet_name):
 
 @st.cache_data(ttl=60)
 def load_all_finance_data():
-    # [修改] 移除 ChatHistory
     sheet_names = [
         "Finance",
         "FixedExpenses",
@@ -107,7 +114,7 @@ def load_all_finance_data():
             return name, pd.DataFrame(sheet.get_all_records())
         return name, pd.DataFrame()
 
-    # 這裡保持原樣，負責「真正」去抓資料
+    # 這裡因為 get_worksheet 已經有快取了，多執行緒會變得非常快且安全
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         results = executor.map(fetch_one, sheet_names)
 
@@ -127,7 +134,6 @@ def get_settings():
         records = sheet.get_all_records()
         settings = {row["Item"]: row["Value"] for row in records}
 
-        # [修改] 移除女僕與 Loading 相關設定
         defaults = {
             "LifeGoal": "未設定",
             "Location": "Taipei,TW",
