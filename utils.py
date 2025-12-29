@@ -107,6 +107,7 @@ def load_all_finance_data():
             return name, pd.DataFrame(sheet.get_all_records())
         return name, pd.DataFrame()
 
+    # 這裡保持原樣，負責「真正」去抓資料
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         results = executor.map(fetch_one, sheet_names)
 
