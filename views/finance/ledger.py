@@ -3,6 +3,8 @@ import pandas as pd
 from datetime import datetime
 import sys
 import os
+import time
+import gspread  # [新增] 用於捕捉錯誤
 
 # 路徑修正
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -12,11 +14,32 @@ sys.path.append(root_dir)
 from utils import update_setting_value, load_all_finance_data
 
 
+# --- [新增] API 重試機制 ---
+def api_retry(func, *args, **kwargs):
+    """
+    執行 Google Sheet 操作，若遇到 API 限制 (429) 則自動等待並重試。
+    """
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            # 如果是最後一次嘗試，或者不是流量限制錯誤，就拋出異常
+            if i == max_retries - 1:
+                raise e
+
+            # 顯示等待訊息 (僅在第一次重試時顯示，避免太干擾)
+            if i == 0:
+                st.toast(f"⏳ 雲端寫入頻繁，正在排隊重試中...", icon="⚠️")
+
+            # 指數退避: 等待 2s, 4s, 8s...
+            time.sleep(2 * (i + 1))
+        except Exception as e:
+            raise e
+
+
 # --- 通用編輯器邏輯 (編輯/刪除) ---
 def handle_data_editor(df, sheet, key_prefix, df_session_key):
-    """
-    優化版：編輯後只更新 Session State，不強制重讀整個資料庫
-    """
     if df.empty:
         st.info("目前沒有資料。")
         return
@@ -62,11 +85,19 @@ def handle_data_editor(df, sheet, key_prefix, df_session_key):
                     if not deleted_rows.empty:
                         for idx in deleted_rows.index:
                             rows_to_delete.append(idx + 2)
-                        for row_num in sorted(rows_to_delete, reverse=True):
-                            sheet.delete_rows(row_num)
+
+                        # [修改] 使用 api_retry 包覆刪除操作
+                        def batch_delete():
+                            for row_num in sorted(
+                                rows_to_delete, reverse=True
+                            ):
+                                sheet.delete_rows(row_num)
+
+                        api_retry(batch_delete)
                         st.toast(f"已刪除 {len(rows_to_delete)} 筆資料")
 
-                    # 2. 處理修改 (同步更新 GSheet)
+                    # 2. 處理修改
+                    changes_count = 0
                     for idx, row in edited_df.iterrows():
                         if row["刪除"]:
                             continue
@@ -91,15 +122,18 @@ def handle_data_editor(df, sheet, key_prefix, df_session_key):
                             row_values.insert(1, week_data.get(idx, ""))
 
                         if changes_found:
-                            sheet.update(
-                                range_name=f"A{idx+2}", values=[row_values]
+                            # [修改] 使用 api_retry 包覆更新操作
+                            api_retry(
+                                sheet.update,
+                                range_name=f"A{idx+2}",
+                                values=[row_values],
                             )
-                            st.toast(f"已更新第 {idx+2} 列")
+                            changes_count += 1
 
-                    # 3. [關鍵優化] 直接更新 Session State，不重新讀取
-                    # 我們假設編輯器已經反映了最新狀態，這裡我們需要重新整理 Session
-                    # 但 DataEditor 比較複雜，為了資料一致性，編輯/刪除操作我們還是保留一次重讀
-                    # 因為刪除涉及到 Index 錯位，手動修復 Session 代價太高
+                    if changes_count > 0:
+                        st.toast(f"已更新 {changes_count} 筆資料")
+
+                    # 3. 重新整理
                     load_all_finance_data.clear()
                     if "fin_data_loaded" in st.session_state:
                         del st.session_state["fin_data_loaded"]
@@ -149,10 +183,10 @@ def show_income_tab(sheet_income, df_income, income_types):
 
                 row_data = [str(i_date), i_item, i_amount, final_type, i_note]
 
-                # 1. 寫入雲端 (確保資料不遺失)
-                sheet_income.append_row(row_data)
+                # [修改] 使用 api_retry 包覆寫入操作
+                api_retry(sheet_income.append_row, row_data)
 
-                # 2. [關鍵優化] 手動更新本地資料，不清除快取！
+                # 手動更新本地 Session (樂觀更新)
                 new_row = pd.DataFrame(
                     [row_data],
                     columns=["Date", "Item", "Amount", "Type", "Note"],
@@ -173,8 +207,8 @@ def show_income_tab(sheet_income, df_income, income_types):
                     )
                     st.toast(f"已記憶新類別：{new_type}")
 
-                st.success("已存入！(快速模式)")
-                st.rerun()  # 重新執行以更新介面，但不會觸發 API 讀取
+                st.success("已存入！")
+                st.rerun()
             else:
                 st.error("找不到 Income 分頁")
 
@@ -247,10 +281,10 @@ def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
                     final_t2,
                 ]
 
-                # 1. 寫入雲端
-                sheet_fin.append_row(row_data)
+                # [修改] 使用 api_retry 包覆寫入操作
+                api_retry(sheet_fin.append_row, row_data)
 
-                # 2. [關鍵優化] 手動更新 Session State (本地資料)
+                # 手動更新本地 Session
                 new_row = pd.DataFrame(
                     [row_data],
                     columns=[
@@ -277,10 +311,7 @@ def show_expense_tab(sheet_fin, df_fin, type1_list, type2_list):
                         "Type2_Options", ",".join(type2_list + [new_t2])
                     )
 
-                st.success("已記錄！(快速模式)")
-                # 移除清除快取的動作
-                # load_all_finance_data.clear()
-                # if "fin_data_loaded" in st.session_state: del st.session_state["fin_data_loaded"]
+                st.success("已記錄！")
                 st.rerun()
             else:
                 st.error("找不到 Finance 分頁")
